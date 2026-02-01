@@ -36,17 +36,16 @@ if "phq9_score" not in st.session_state:
     st.session_state.phq9_score = 0
 
 # ==========================================
-# 4. 하이브리드 분석 로직 (Hard Rule + AI 답변 생성)
+# 4. 하이브리드 분석 로직 (정밀 분류 적용)
 # ==========================================
 def analyze_input(text, key):
-    # [1차 방어선] Hard Rule
+    # [1차 방어선] Hard Rule (군 특수 치명적 키워드)
     critical_keywords = ["실사격", "총기", "실탄", "수류탄", "K2", "조정간", "격발"]
     for word in critical_keywords:
         if word in text:
-            # 안전장치 걸려도 말은 AI가 하게 유도 가능하지만, 긴급하므로 고정 멘트 사용
             return 2, f"군 특수 위험 키워드 '{word}' 감지", "위험한 단어가 감지되었습니다. 전우님, 혹시 나쁜 마음을 먹고 계신 건 아닌지 걱정됩니다."
 
-    # [2차 방어선] AI (LLM): 문맥 분석 + 답변 생성
+    # [2차 방어선] AI (LLM)
     if not key:
         return 0, "키 없음", "API 키를 먼저 입력해주세요."
     
@@ -57,21 +56,15 @@ def analyze_input(text, key):
             messages=[
                 {"role": "system", "content": """
                 당신은 군 장병의 자살 위기 감지 AI 상담관 'ARMIND7'입니다.
-                사용자의 말을 듣고 위험도를 분류하고, 공감하는 답변을 해주세요.
                 
-                [분류 기준]
-                - Level 3 (실행 임박): "지금 옥상이다", "칼을 들었다". (즉각 개입)
-                - Level 2 (구체적 계획): "죽고 싶다", "총으로 끝내고 싶다". (구체적 충동)
-                - Level 1 (잠재적 위험): "힘들다", "지친다", "우울해", "잠이 안 와". (위로 필요 + PHQ-9 권유)
+                [엄격한 분류 기준]
+                - Level 3 (실행 임박): "지금 옥상이다", "난간에 서 있다", "지금 뛰어내린다". (즉각적인 행동/위치 언급 필수)
+                - Level 2 (구체적 계획): "총으로 죽고 싶다", "휴가 나가서 번개탄을 사겠다". (구체적인 '수단'이나 '장소'가 언급되어야 함)
+                - Level 1 (잠재적 위험): "그냥 자살하고 싶다", "죽고 싶다", "너무 힘들다", "사라지고 싶다". (구체적 계획 없이 감정/충동만 표현한 경우)
                 - Level 0 (안전): 일상 대화.
                 
                 [출력 형식]
-                JSON 형식으로만 출력하세요:
-                {
-                    "level": 숫자 (0~3),
-                    "reason": "판단 이유 요약",
-                    "reply": "사용자에게 건넬 따뜻하고 공감하는 답변 텍스트 (반말 말고 '해요'체 사용)"
-                }
+                JSON 형식으로만 출력: {"level": 숫자, "reason": "이유", "reply": "공감하는 답변(해요체)"}
                 """},
                 {"role": "user", "content": text}
             ],
@@ -80,7 +73,7 @@ def analyze_input(text, key):
         result = json.loads(response.choices[0].message.content)
         return result["level"], result["reason"], result["reply"]
     except Exception as e:
-        return 0, "오류", "죄송해요. 잠시 시스템 오류가 발생했습니다."
+        return 0, "오류", "시스템 오류가 발생했습니다."
 
 # ==========================================
 # 5. 채팅 UI
@@ -97,23 +90,21 @@ if prompt := st.chat_input("전우님, 무슨 고민이 있으신가요?"):
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # 분석 및 답변 생성
         level, reason, ai_reply = analyze_input(prompt, api_key)
         st.session_state.risk_level = level
+        st.session_state.ui_step = 0 # 새로운 대화 시 UI 단계 초기화
         
-        # AI 답변 출력 (타자기 효과)
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             full_response = ""
             
-            # Level 별 추가 멘트 붙이기
             final_msg = ai_reply
             if level == 1:
-                final_msg += "\n\n(혹시 마음 상태를 점검해 보고 싶다면, 아래 '마음 점검하기'를 눌러주세요.)"
+                final_msg += "\n\n(마음이 많이 힘드신 것 같네요. 아래 자가진단을 한번 해보시겠어요?)"
             elif level == 2:
-                final_msg += "\n\n⚠️ **위험이 감지되었습니다. 저와 안전 약속을 해주세요.**"
+                final_msg += "\n\n⚠️ **위험한 생각이 듭니다. 저와 안전 약속을 해주세요.**"
             elif level == 3:
-                final_msg += "\n\n🚨 **구조 요청을 전송합니다. 잠시만 대기해주세요.**"
+                final_msg += "\n\n🚨 **구조 요청을 전송합니다. 그대로 대기하세요.**"
 
             for chunk in final_msg.split():
                 full_response += chunk + " "
@@ -125,89 +116,110 @@ if prompt := st.chat_input("전우님, 무슨 고민이 있으신가요?"):
         st.rerun()
 
 # ==========================================
-# 6. 상황별 특수 UI (PHQ-9, Safety Plan, Grounding)
+# 6. 상황별 특수 UI (모바일 버튼 추가됨)
 # ==========================================
 
-# [Level 1] PHQ-9 (우울증 선별검사) - 정식 9문항 버전
+# [Level 1] PHQ-9 (우울증 선별검사)
 if st.session_state.risk_level == 1:
     st.divider()
     with st.expander("📋 **마음 건강 자가진단 (PHQ-9)** 열기", expanded=True):
-        st.write("지난 2주 동안, 다음 문제들로 인해 얼마나 자주 방해받으셨나요?")
+        st.write("지난 2주 동안 겪으신 증상을 체크해주세요.")
         
-        # 정식 PHQ-9 문항 리스트
         phq9_questions = [
             "1. 기분이 가라앉거나, 우울하거나, 희망이 없다고 느꼈다.",
             "2. 평소 하던 일에 대한 흥미가 없어지거나 즐거움을 느끼지 못했다.",
             "3. 잠들기가 어렵거나 자꾸 깼다 / 혹은 너무 많이 잤다.",
             "4. 평소보다 식욕이 줄었다 / 혹은 평소보다 많이 먹었다.",
-            "5. 다른 사람들이 눈치 챌 정도로 말과 행동이 느려졌다 / 혹은 너무 안절부절못했다.",
+            "5. 다른 사람들이 눈치 챌 정도로 말과 행동이 느려졌다.",
             "6. 피곤하고 기운이 없었다.",
-            "7. 내가 잘못했거나, 실패했다는 생각이 들었다 (자책감).",
-            "8. 신문을 읽거나 TV를 보는 것과 같은 일상적인 일에도 집중할 수가 없었다.",
-            "9. 차라리 죽는 것이 더 낫겠다고 생각했다 / 혹은 자해할 생각을 했다."
+            "7. 내가 잘못했거나, 실패했다는 생각이 들었다.",
+            "8. 일상적인 일에도 집중할 수가 없었다.",
+            "9. 차라리 죽는 것이 더 낫겠다고 생각했다."
         ]
         
         options = ["전혀 아님 (0점)", "며칠 동안 (1점)", "일주일 이상 (2점)", "매일 (3점)"]
         scores = []
 
-        # 문항 반복 출력
         for idx, q in enumerate(phq9_questions):
             choice = st.radio(q, options, index=0, key=f"phq9_{idx}", horizontal=True)
-            scores.append(int(choice[-3])) # "0점"에서 숫자만 추출
-            st.markdown("---") # 구분선
+            scores.append(int(choice[-3]))
+            st.markdown("---")
 
-        # 결과 계산
-        if st.button("결과 확인"):
+        if st.button("결과 확인 (터치)"):
             total_score = sum(scores)
-            st.session_state.phq9_score = total_score
-            
-            # 점수 해석 (임상 기준)
             st.write(f"### 📊 총점: {total_score}점")
-            
-            if total_score <= 4:
-                st.success("✅ **[정상 범위]** 마음 상태가 안정적입니다.")
-            elif total_score <= 9:
-                st.info("⚠️ **[가벼운 우울]** 약간의 스트레스가 보입니다. 산책이나 휴식을 권장합니다.")
-            elif total_score <= 14:
-                st.warning("🟠 **[중간 정도의 우울]** 지속된다면 상담관님과 대화가 필요합니다.")
-            elif total_score <= 19:
-                st.error("🔴 **[약간 심한 우울]** 전문적인 도움(상담, 진료)을 받는 것이 좋습니다.")
-            else:
-                st.error("🚨 **[심한 우울]** 혼자 해결하려 하지 마세요. 꼭 도움을 요청해야 합니다.")
-                
-            # 9번 문항(자살 사고) 체크
-# [Level 2] Safety Plan
+            if total_score <= 4: st.success("✅ 정상 범위입니다.")
+            elif total_score <= 9: st.info("⚠️ 가벼운 우울감이 있습니다.")
+            elif total_score <= 14: st.warning("🟠 상담이 필요한 상태입니다.")
+            elif total_score <= 19: st.error("🔴 전문적인 도움이 필요합니다.")
+            else: st.error("🚨 매우 심한 우울 상태입니다. 도움을 요청하세요.")
+
+# [Level 2] Safety Plan (모바일 버튼 추가)
 if st.session_state.risk_level == 2:
     st.divider()
     st.error(f"⚠️ **구체적 위험 감지됨**")
     with st.container(border=True):
-        st.markdown("### 🛡️ Digital Safety Plan (안전 계획)")
+        st.markdown("### 🛡️ Digital Safety Plan")
         
         st.markdown("#### ✅ Step 1. 위험 수단 제거")
         st.write("주변에 위험한 물건(총기 등)이 있나요? 당장 치우세요.")
-        if st.checkbox("네, 치웠거나 벗어났습니다."):
+        
+        # 버튼으로 단계 넘기기 (모바일 최적화)
+        if st.session_state.ui_step == 0:
+            if st.button("네, 치웠습니다 (다음 단계로)"):
+                st.session_state.ui_step = 1
+                st.rerun()
+        
+        if st.session_state.ui_step >= 1:
+            st.success("확인되었습니다.")
             st.markdown("---")
             st.markdown("#### 🧘 Step 2. 나만의 진정 방법")
-            coping = st.text_area("기분이 나아지는 행동은? (예: 가족 사진 보기)")
-            if coping:
-                st.markdown("---")
-                st.markdown("#### 📞 Step 3. 도움 요청")
-                if st.button("국방헬프콜 (1303) 연결", type="primary"):
-                    st.success("📞 연결 중입니다... (지휘관에게 알림 전송됨)")
+            coping = st.text_area("기분이 나아지는 행동은?", key="coping_input")
+            
+            if st.session_state.ui_step == 1:
+                if st.button("입력 완료 (다음 단계로)"):
+                    if coping:
+                        st.session_state.ui_step = 2
+                        st.rerun()
+                    else:
+                        st.warning("내용을 입력해주세요.")
 
-# [Level 3] Grounding
+        if st.session_state.ui_step >= 2:
+            st.success("저장되었습니다.")
+            st.markdown("---")
+            st.markdown("#### 📞 Step 3. 도움 요청")
+            if st.button("국방헬프콜 (1303) 연결", type="primary"):
+                st.success("📞 연결 중입니다... (지휘관 알림 전송됨)")
+
+# [Level 3] Grounding (모바일 버튼 추가)
 if st.session_state.risk_level == 3:
     st.divider()
-    st.success("📡 **[자동 전송 완료] 구조 요청이 전송되었습니다.**")
+    st.success("📡 **[자동 전송 완료] 구조 요청 전송됨**")
     with st.container(border=True):
         st.markdown("### 🛑 **현실 감각 찾기 (Grounding)**")
-        st.warning("지금 뇌가 과열되었습니다. 질문에 답하며 스위치를 끄세요.")
+        st.warning("뇌의 스위치를 끄기 위해 아래 질문에 답해주세요.")
         
-        val1 = st.text_input("👀 1. 보이는 것 5가지")
-        if val1:
-            val2 = st.text_input("👂 2. 들리는 것 4가지")
-            if val2:
-                val3 = st.text_input("✋ 3. 느껴지는 것 3가지")
+        # Step 1: 시각
+        val1 = st.text_input("👀 1. 보이는 것 5가지", key="g1")
+        if st.session_state.ui_step == 0:
+            if st.button("입력 (1/3)"):
+                if val1: 
+                    st.session_state.ui_step = 1
+                    st.rerun()
+
+        # Step 2: 청각
+        if st.session_state.ui_step >= 1:
+            val2 = st.text_input("👂 2. 들리는 것 4가지", key="g2")
+            if st.session_state.ui_step == 1:
+                if st.button("입력 (2/3)"):
+                    if val2:
+                        st.session_state.ui_step = 2
+                        st.rerun()
+
+        # Step 3: 촉각
+        if st.session_state.ui_step >= 2:
+            val3 = st.text_input("✋ 3. 느껴지는 것 3가지", key="g3")
+            if st.button("입력 (완료)"):
                 if val3:
                     st.balloons()
                     st.info("잘하셨습니다. 곧 구조대가 도착합니다.")
