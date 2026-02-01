@@ -128,26 +128,54 @@ if prompt := st.chat_input("전우님, 무슨 고민이 있으신가요?"):
 # 6. 상황별 특수 UI (PHQ-9, Safety Plan, Grounding)
 # ==========================================
 
-# [Level 1] PHQ-9 (우울증 선별검사)
+# [Level 1] PHQ-9 (우울증 선별검사) - 정식 9문항 버전
 if st.session_state.risk_level == 1:
     st.divider()
     with st.expander("📋 **마음 건강 자가진단 (PHQ-9)** 열기", expanded=True):
-        st.write("지난 2주 동안 다음과 같은 문제들로 인하여 얼마나 자주 방해를 받았습니까?")
+        st.write("지난 2주 동안, 다음 문제들로 인해 얼마나 자주 방해받으셨나요?")
         
-        q1 = st.radio("1. 일이나 무언가를 하는 데 있어서 흥미나 즐거움을 느끼지 못함", ["전혀 아님 (0)", "며칠 동안 (1)", "일주일 이상 (2)", "매일 (3)"], index=0)
-        q2 = st.radio("2. 기분이 가라앉거나, 우울하거나, 희망이 없다고 느낌", ["전혀 아님 (0)", "며칠 동안 (1)", "일주일 이상 (2)", "매일 (3)"], index=0)
-        q3 = st.radio("3. 잠이 들기 어렵거나 자꾸 깸, 혹은 너무 많이 잠", ["전혀 아님 (0)", "며칠 동안 (1)", "일주일 이상 (2)", "매일 (3)"], index=0)
+        # 정식 PHQ-9 문항 리스트
+        phq9_questions = [
+            "1. 기분이 가라앉거나, 우울하거나, 희망이 없다고 느꼈다.",
+            "2. 평소 하던 일에 대한 흥미가 없어지거나 즐거움을 느끼지 못했다.",
+            "3. 잠들기가 어렵거나 자꾸 깼다 / 혹은 너무 많이 잤다.",
+            "4. 평소보다 식욕이 줄었다 / 혹은 평소보다 많이 먹었다.",
+            "5. 다른 사람들이 눈치 챌 정도로 말과 행동이 느려졌다 / 혹은 너무 안절부절못했다.",
+            "6. 피곤하고 기운이 없었다.",
+            "7. 내가 잘못했거나, 실패했다는 생각이 들었다 (자책감).",
+            "8. 신문을 읽거나 TV를 보는 것과 같은 일상적인 일에도 집중할 수가 없었다.",
+            "9. 차라리 죽는 것이 더 낫겠다고 생각했다 / 혹은 자해할 생각을 했다."
+        ]
         
-        if st.button("결과 확인"):
-            # 점수 계산 (약식 3문항 예시)
-            score = int(q1[-2]) + int(q2[-2]) + int(q3[-2])
-            st.session_state.phq9_score = score
-            
-            if score >= 5:
-                st.error(f"점수: {score}점 (주의 필요)\n\n우울감이 높게 측정되었습니다. 상담관님과 이야기를 나눠보는 건 어떨까요?")
-            else:
-                st.success(f"점수: {score}점 (양호)\n\n아직은 괜찮은 상태지만, 힘들 땐 언제든 저를 찾아주세요.")
+        options = ["전혀 아님 (0점)", "며칠 동안 (1점)", "일주일 이상 (2점)", "매일 (3점)"]
+        scores = []
 
+        # 문항 반복 출력
+        for idx, q in enumerate(phq9_questions):
+            choice = st.radio(q, options, index=0, key=f"phq9_{idx}", horizontal=True)
+            scores.append(int(choice[-3])) # "0점"에서 숫자만 추출
+            st.markdown("---") # 구분선
+
+        # 결과 계산
+        if st.button("결과 확인"):
+            total_score = sum(scores)
+            st.session_state.phq9_score = total_score
+            
+            # 점수 해석 (임상 기준)
+            st.write(f"### 📊 총점: {total_score}점")
+            
+            if total_score <= 4:
+                st.success("✅ **[정상 범위]** 마음 상태가 안정적입니다.")
+            elif total_score <= 9:
+                st.info("⚠️ **[가벼운 우울]** 약간의 스트레스가 보입니다. 산책이나 휴식을 권장합니다.")
+            elif total_score <= 14:
+                st.warning("🟠 **[중간 정도의 우울]** 지속된다면 상담관님과 대화가 필요합니다.")
+            elif total_score <= 19:
+                st.error("🔴 **[약간 심한 우울]** 전문적인 도움(상담, 진료)을 받는 것이 좋습니다.")
+            else:
+                st.error("🚨 **[심한 우울]** 혼자 해결하려 하지 마세요. 꼭 도움을 요청해야 합니다.")
+                
+            # 9번 문항(자살 사고) 체크
 # [Level 2] Safety Plan
 if st.session_state.risk_level == 2:
     st.divider()
