@@ -119,40 +119,64 @@ if prompt := st.chat_input("전우님, 무슨 고민이 있으신가요?"):
 # 6. 상황별 특수 UI (모바일 버튼 추가됨)
 # ==========================================
 
-# [Level 1] PHQ-9 (우울증 선별검사)
+# [Level 1] PHQ-9 (우울증 선별검사) - 정식 9문항 버전 (로직 수정됨)
 if st.session_state.risk_level == 1:
     st.divider()
     with st.expander("📋 **마음 건강 자가진단 (PHQ-9)** 열기", expanded=True):
-        st.write("지난 2주 동안 겪으신 증상을 체크해주세요.")
+        st.write("지난 2주 동안, 다음 문제들로 인해 얼마나 자주 방해받으셨나요?")
         
         phq9_questions = [
             "1. 기분이 가라앉거나, 우울하거나, 희망이 없다고 느꼈다.",
             "2. 평소 하던 일에 대한 흥미가 없어지거나 즐거움을 느끼지 못했다.",
             "3. 잠들기가 어렵거나 자꾸 깼다 / 혹은 너무 많이 잤다.",
             "4. 평소보다 식욕이 줄었다 / 혹은 평소보다 많이 먹었다.",
-            "5. 다른 사람들이 눈치 챌 정도로 말과 행동이 느려졌다.",
+            "5. 다른 사람들이 눈치 챌 정도로 말과 행동이 느려졌다 / 혹은 너무 안절부절못했다.",
             "6. 피곤하고 기운이 없었다.",
-            "7. 내가 잘못했거나, 실패했다는 생각이 들었다.",
-            "8. 일상적인 일에도 집중할 수가 없었다.",
-            "9. 차라리 죽는 것이 더 낫겠다고 생각했다."
+            "7. 내가 잘못했거나, 실패했다는 생각이 들었다 (자책감).",
+            "8. 신문을 읽거나 TV를 보는 것과 같은 일상적인 일에도 집중할 수가 없었다.",
+            "9. 차라리 죽는 것이 더 낫겠다고 생각했다 / 혹은 자해할 생각을 했다."
         ]
         
         options = ["전혀 아님 (0점)", "며칠 동안 (1점)", "일주일 이상 (2점)", "매일 (3점)"]
         scores = []
 
+        # 문항 반복 출력
         for idx, q in enumerate(phq9_questions):
-            choice = st.radio(q, options, index=0, key=f"phq9_{idx}", horizontal=True)
-            scores.append(int(choice[-3]))
+            # 9번 문항은 빨간색으로 강조
+            if idx == 8:
+                st.markdown(f"**:red[{q}]**")
+            else:
+                st.write(q)
+                
+            choice = st.radio(f"{idx+1}번 문항 선택", options, index=0, key=f"phq9_{idx}", label_visibility="collapsed", horizontal=True)
+            scores.append(int(choice[-3])) # "0점"에서 숫자만 추출
             st.markdown("---")
 
+        # 결과 계산 버튼 (모바일 최적화)
         if st.button("결과 확인 (터치)"):
             total_score = sum(scores)
+            st.session_state.phq9_score = total_score
             st.write(f"### 📊 총점: {total_score}점")
-            if total_score <= 4: st.success("✅ 정상 범위입니다.")
-            elif total_score <= 9: st.info("⚠️ 가벼운 우울감이 있습니다.")
-            elif total_score <= 14: st.warning("🟠 상담이 필요한 상태입니다.")
-            elif total_score <= 19: st.error("🔴 전문적인 도움이 필요합니다.")
-            else: st.error("🚨 매우 심한 우울 상태입니다. 도움을 요청하세요.")
+
+            # [로직 수정] 9번 문항이 0보다 크면, 총점이 낮아도 무조건 '위험' 경고
+            if scores[8] > 0:
+                st.error("🚨 **[위험 감지]** 총점과 관계없이, 자해나 죽음에 대한 생각이 감지되었습니다.")
+                st.error("혼자 고민하지 마십시오. 지금 당장 전문가의 도움이 필요합니다.")
+                if st.button("국방헬프콜 (1303) 연결하기", type="primary"):
+                    st.success("연결 중입니다...")
+            
+            # 9번 문항이 0점일 때만 일반 점수 해석 진행
+            else:
+                if total_score <= 4:
+                    st.success("✅ **[정상 범위]** 현재 마음 상태가 안정적입니다. 지금처럼 전우들과 잘 지내시면 됩니다.")
+                elif total_score <= 9:
+                    st.info("⚠️ **[가벼운 우울]** 약간의 스트레스가 보입니다. 맛있는 걸 먹거나 푹 쉬면서 기분을 환기해 보세요.")
+                elif total_score <= 14:
+                    st.warning("🟠 **[중간 정도의 우울]** 우울감이 지속되고 있습니다. 상담관님과 가볍게 차 한잔하며 이야기해보는 건 어떨까요?")
+                elif total_score <= 19:
+                    st.error("🔴 **[약간 심한 우울]** 혼자 버티기 힘든 상태입니다. 전문적인 상담이나 진료를 권장합니다.")
+                else:
+                    st.error("🚨 **[심한 우울]** 마음이 많이 병들었습니다. 꼭 군 병원이나 전문가에게 도움을 요청해야 합니다.")
 
 # [Level 2] Safety Plan (모바일 버튼 추가)
 if st.session_state.risk_level == 2:
