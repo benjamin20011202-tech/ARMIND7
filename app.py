@@ -533,8 +533,8 @@ with tabs[2]:
                 st.divider()
                 st.markdown("**✅ 오늘 먹은 메뉴 체크**")
                 checked = []
-                for item in menu_list:
-                    if st.checkbox(item, value=True, key=f"chk_{meal_time}_{item}"):
+                for i, item in enumerate(menu_list):
+                    if st.checkbox(item, value=True, key=f"chk_{meal_time}_{i}_{item[:10]}"):
                         checked.append(item)
                 st.session_state.meal_log[meal_time] = checked
             else:
