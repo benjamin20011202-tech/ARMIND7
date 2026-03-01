@@ -387,7 +387,7 @@ with tabs[2]:
             # 실제 태그명 자동 탐지
             first_row = next(root.iter("row"), None)
             if first_row is None:
-                return {}, None, debug_info, []
+                return {}, None, []
             actual_tags = [child.tag for child in first_row]
             debug_info["tags"] = actual_tags
 
@@ -453,9 +453,9 @@ with tabs[2]:
                 if sum_cal:
                     meals[date]["총_칼로리"] = sum_cal.replace("kcal","").strip()
 
-            return meals, None, debug_info, list(meals.keys())
+            return meals, None, list(meals.keys())
         except Exception as e:
-            return {}, str(e), {"url": url}, []
+            return {}, str(e), []
 
     import datetime
     today = datetime.date.today()
@@ -490,12 +490,7 @@ with tabs[2]:
 
     with st.spinner("📡 부대 식단을 불러오는 중..."):
         total_count = get_total_count()
-        meal_data, api_error, debug_info, available_dates = fetch_mnd_meal(selected_ym, start=1, end=total_count)
-
-    # 디버그 정보 (문제 진단용 - 해결 후 삭제 가능)
-    with st.expander("🔧 API 디버그 정보 (문제 확인용)", expanded=False):
-        st.json(debug_info)
-        st.write(f"**불러온 날짜 목록:** {available_dates[:5] if available_dates else '없음'}")
+        meal_data, api_error, available_dates = fetch_mnd_meal(selected_ym, start=1, end=total_count)
 
     if api_error:
         st.error(f"⚠️ API 연결 오류: {api_error}")
