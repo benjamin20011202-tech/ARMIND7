@@ -373,10 +373,10 @@ with tabs[2]:
     MND_SERVICE = st.secrets.get("MND_SERVICE", "DS_TB_MNDT_DATEBYMLSVC_6335")
 
     @st.cache_data(ttl=3600)
-    def fetch_mnd_meal(year_month: str):
+    def fetch_mnd_meal(year_month: str, start: int = 1, end: int = 300):
         """year_month: 'YYYYMM' 형식. 해당 월의 식단 전체를 가져옵니다."""
         import requests, xml.etree.ElementTree as ET
-        url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/1/31/"
+        url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/{start}/{end}/"
         try:
             resp = requests.get(url, timeout=10)
             resp.encoding = "utf-8"
@@ -475,8 +475,23 @@ with tabs[2]:
     selected_date_str = selected_date.strftime("%Y%m%d")
     selected_ym = selected_date.strftime("%Y%m")
 
+    @st.cache_data(ttl=86400)
+    def get_total_count():
+        """총 데이터 건수를 가져와서 최근 데이터 위치를 계산"""
+        import requests, xml.etree.ElementTree as ET
+        url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/1/1/"
+        try:
+            resp = requests.get(url, timeout=10)
+            root = ET.fromstring(resp.text)
+            total = root.findtext("list_total_count")
+            return int(total) if total else 3755
+        except:
+            return 3755
+
     with st.spinner("📡 부대 식단을 불러오는 중..."):
-        meal_data, api_error, debug_info, available_dates = fetch_mnd_meal(selected_ym)
+        total_count = get_total_count()
+        start = max(1, total_count - 89)
+        meal_data, api_error, debug_info, available_dates = fetch_mnd_meal(selected_ym, start=start, end=total_count)
 
     # 디버그 정보 (문제 진단용 - 해결 후 삭제 가능)
     with st.expander("🔧 API 디버그 정보 (문제 확인용)", expanded=False):
