@@ -490,8 +490,7 @@ with tabs[2]:
 
     with st.spinner("📡 부대 식단을 불러오는 중..."):
         total_count = get_total_count()
-        start = max(1, total_count - 89)
-        meal_data, api_error, debug_info, available_dates = fetch_mnd_meal(selected_ym, start=start, end=total_count)
+        meal_data, api_error, debug_info, available_dates = fetch_mnd_meal(selected_ym, start=1, end=total_count)
 
     # 디버그 정보 (문제 진단용 - 해결 후 삭제 가능)
     with st.expander("🔧 API 디버그 정보 (문제 확인용)", expanded=False):
