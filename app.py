@@ -391,28 +391,68 @@ with tabs[2]:
             actual_tags = [child.tag for child in first_row]
             debug_info["tags"] = actual_tags
 
-            date_tag = next((t for t in actual_tags if "DATE" in t or "YMD" in t or "DT" in t), None)
-            brst_tag = next((t for t in actual_tags if "BRST" in t and "CNT" in t), None)
-            lnch_tag = next((t for t in actual_tags if "LNCH" in t and "CNT" in t), None)
-            dinr_tag = next((t for t in actual_tags if "DINR" in t and "CNT" in t), None)
-            brst_cal = next((t for t in actual_tags if "BRST" in t and "CALR" in t), None)
-            lnch_cal = next((t for t in actual_tags if "LNCH" in t and "CALR" in t), None)
-            dinr_cal = next((t for t in actual_tags if "DINR" in t and "CALR" in t), None)
+            # 실제 태그명 고정 (API 확인 완료)
+            date_tag = "dates"
+            brst_tag = "brst"
+            lnch_tag = "lunc"   # API 오타: lunc (lunch 아님)
+            dinr_tag = "dinr"
+            brst_cal = "brst_cal"
+            lnch_cal = "lunc_cal"
+            dinr_cal = "dinr_cal"
+            sum_cal_tag = "sum_cal"
             debug_info["detected"] = {"date": date_tag, "brst": brst_tag, "lnch": lnch_tag, "dinr": dinr_tag}
 
+            # 같은 날짜에 여러 row가 있으므로 메뉴를 누적해서 합침
             meals = {}
             for row in root.iter("row"):
-                date = (row.findtext(date_tag) or "").strip() if date_tag else ""
-                if not date:
+                raw_date = (row.findtext(date_tag) or "").strip()
+                if not raw_date:
                     continue
-                meals[date] = {
-                    "아침": [m.strip() for m in (row.findtext(brst_tag) or "").split(",") if m.strip()] if brst_tag else [],
-                    "점심": [m.strip() for m in (row.findtext(lnch_tag) or "").split(",") if m.strip()] if lnch_tag else [],
-                    "저녁": [m.strip() for m in (row.findtext(dinr_tag) or "").split(",") if m.strip()] if dinr_tag else [],
-                    "아침_칼로리": (row.findtext(brst_cal) or "?") if brst_cal else "?",
-                    "점심_칼로리": (row.findtext(lnch_cal) or "?") if lnch_cal else "?",
-                    "저녁_칼로리": (row.findtext(dinr_cal) or "?") if dinr_cal else "?",
-                }
+                # 날짜 형식 정규화: "2025-03-10(월)" → "20250310"
+                import re
+                m = re.match(r"(\d{4})-(\d{2})-(\d{2})", raw_date)
+                date = m.group(1) + m.group(2) + m.group(3) if m else raw_date
+
+                if date not in meals:
+                    meals[date] = {
+                        "아침": [], "점심": [], "저녁": [],
+                        "아침_칼로리": "0", "점심_칼로리": "0", "저녁_칼로리": "0", "총_칼로리": "?"
+                    }
+
+                def parse_menu(text):
+                    """메뉴명에서 알레르기 번호 제거: '배추김치(09)' → '배추김치'"""
+                    if not text:
+                        return []
+                    items = [re.sub(r"\(\d+\)", "", t).strip() for t in text.split(",")]
+                    return [i for i in items if i]
+
+                def add_cal(existing, new_val):
+                    """칼로리 누적 합산"""
+                    try:
+                        e = float(existing.replace("kcal","").strip() or 0)
+                        n = float((new_val or "0").replace("kcal","").strip() or 0)
+                        return str(round(e + n))
+                    except:
+                        return existing
+
+                brst_menu = parse_menu(row.findtext(brst_tag))
+                lnch_menu = parse_menu(row.findtext(lnch_tag))
+                dinr_menu = parse_menu(row.findtext(dinr_tag))
+
+                if brst_menu:
+                    meals[date]["아침"].extend(brst_menu)
+                    meals[date]["아침_칼로리"] = add_cal(meals[date]["아침_칼로리"], row.findtext(brst_cal))
+                if lnch_menu:
+                    meals[date]["점심"].extend(lnch_menu)
+                    meals[date]["점심_칼로리"] = add_cal(meals[date]["점심_칼로리"], row.findtext(lnch_cal))
+                if dinr_menu:
+                    meals[date]["저녁"].extend(dinr_menu)
+                    meals[date]["저녁_칼로리"] = add_cal(meals[date]["저녁_칼로리"], row.findtext(dinr_cal))
+
+                sum_cal = row.findtext(sum_cal_tag)
+                if sum_cal:
+                    meals[date]["총_칼로리"] = sum_cal.replace("kcal","").strip()
+
             return meals, None, debug_info, list(meals.keys())
         except Exception as e:
             return {}, str(e), {"url": url}, []
