@@ -378,25 +378,44 @@ with tabs[2]:
         import requests, xml.etree.ElementTree as ET
         url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/1/31/"
         try:
-            resp = requests.get(url, timeout=5)
+            resp = requests.get(url, timeout=10)
             resp.encoding = "utf-8"
-            root = ET.fromstring(resp.text)
+            raw = resp.text
+            debug_info = {"url": url, "status": resp.status_code, "raw_preview": raw[:500]}
+            root = ET.fromstring(raw)
+
+            # 실제 태그명 자동 탐지
+            first_row = next(root.iter("row"), None)
+            if first_row is None:
+                return {}, None, debug_info, []
+            actual_tags = [child.tag for child in first_row]
+            debug_info["tags"] = actual_tags
+
+            date_tag = next((t for t in actual_tags if "DATE" in t or "YMD" in t or "DT" in t), None)
+            brst_tag = next((t for t in actual_tags if "BRST" in t and "CNT" in t), None)
+            lnch_tag = next((t for t in actual_tags if "LNCH" in t and "CNT" in t), None)
+            dinr_tag = next((t for t in actual_tags if "DINR" in t and "CNT" in t), None)
+            brst_cal = next((t for t in actual_tags if "BRST" in t and "CALR" in t), None)
+            lnch_cal = next((t for t in actual_tags if "LNCH" in t and "CALR" in t), None)
+            dinr_cal = next((t for t in actual_tags if "DINR" in t and "CALR" in t), None)
+            debug_info["detected"] = {"date": date_tag, "brst": brst_tag, "lnch": lnch_tag, "dinr": dinr_tag}
+
             meals = {}
             for row in root.iter("row"):
-                date = (row.findtext("DATE") or "").strip()
-                if not date.startswith(year_month):
+                date = (row.findtext(date_tag) or "").strip() if date_tag else ""
+                if not date:
                     continue
                 meals[date] = {
-                    "아침": [m.strip() for m in (row.findtext("BRST_CNT") or "").split(",") if m.strip()],
-                    "점심": [m.strip() for m in (row.findtext("LNCH_CNT") or "").split(",") if m.strip()],
-                    "저녁": [m.strip() for m in (row.findtext("DINR_CNT") or "").split(",") if m.strip()],
-                    "아침_칼로리": row.findtext("BRST_CALR") or "?",
-                    "점심_칼로리": row.findtext("LNCH_CALR") or "?",
-                    "저녁_칼로리": row.findtext("DINR_CALR") or "?",
+                    "아침": [m.strip() for m in (row.findtext(brst_tag) or "").split(",") if m.strip()] if brst_tag else [],
+                    "점심": [m.strip() for m in (row.findtext(lnch_tag) or "").split(",") if m.strip()] if lnch_tag else [],
+                    "저녁": [m.strip() for m in (row.findtext(dinr_tag) or "").split(",") if m.strip()] if dinr_tag else [],
+                    "아침_칼로리": (row.findtext(brst_cal) or "?") if brst_cal else "?",
+                    "점심_칼로리": (row.findtext(lnch_cal) or "?") if lnch_cal else "?",
+                    "저녁_칼로리": (row.findtext(dinr_cal) or "?") if dinr_cal else "?",
                 }
-            return meals, None
+            return meals, None, debug_info, list(meals.keys())
         except Exception as e:
-            return {}, str(e)
+            return {}, str(e), {"url": url}, []
 
     import datetime
     today = datetime.date.today()
@@ -417,7 +436,12 @@ with tabs[2]:
     selected_ym = selected_date.strftime("%Y%m")
 
     with st.spinner("📡 부대 식단을 불러오는 중..."):
-        meal_data, api_error = fetch_mnd_meal(selected_ym)
+        meal_data, api_error, debug_info, available_dates = fetch_mnd_meal(selected_ym)
+
+    # 디버그 정보 (문제 진단용 - 해결 후 삭제 가능)
+    with st.expander("🔧 API 디버그 정보 (문제 확인용)", expanded=False):
+        st.json(debug_info)
+        st.write(f"**불러온 날짜 목록:** {available_dates[:5] if available_dates else '없음'}")
 
     if api_error:
         st.error(f"⚠️ API 연결 오류: {api_error}")
@@ -430,6 +454,8 @@ with tabs[2]:
         }
     elif selected_date_str not in meal_data:
         st.warning(f"📭 {selected_date.strftime('%Y년 %m월 %d일')} 식단 데이터가 없습니다.")
+        if available_dates:
+            st.info(f"💡 이 달에 데이터가 있는 날짜: {', '.join(available_dates[:5])}")
         today_meals = {"아침": [], "점심": [], "저녁": [],
                        "아침_칼로리": "-", "점심_칼로리": "-", "저녁_칼로리": "-"}
     else:
