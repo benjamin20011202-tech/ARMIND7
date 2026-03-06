@@ -440,13 +440,19 @@ with tabs[2]:
                 dinr_menu = parse_menu(row.findtext(dinr_tag))
 
                 if brst_menu:
-                    meals[date]["아침"].extend(brst_menu)
+                    for m in brst_menu:
+                        if m not in meals[date]["아침"]:
+                            meals[date]["아침"].append(m)
                     meals[date]["아침_칼로리"] = add_cal(meals[date]["아침_칼로리"], row.findtext(brst_cal))
                 if lnch_menu:
-                    meals[date]["점심"].extend(lnch_menu)
+                    for m in lnch_menu:
+                        if m not in meals[date]["점심"]:
+                            meals[date]["점심"].append(m)
                     meals[date]["점심_칼로리"] = add_cal(meals[date]["점심_칼로리"], row.findtext(lnch_cal))
                 if dinr_menu:
-                    meals[date]["저녁"].extend(dinr_menu)
+                    for m in dinr_menu:
+                        if m not in meals[date]["저녁"]:
+                            meals[date]["저녁"].append(m)
                     meals[date]["저녁_칼로리"] = add_cal(meals[date]["저녁_칼로리"], row.findtext(dinr_cal))
 
                 sum_cal = row.findtext(sum_cal_tag)
