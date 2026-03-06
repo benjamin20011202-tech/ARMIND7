@@ -415,39 +415,40 @@ with tabs[2]:
 
                 if date not in meals:
                     meals[date] = {
-                        "아침": [], "점심": [], "저녁": [],
-                        "아침_칼로리": None, "점심_칼로리": None, "저녁_칼로리": None, "총_칼로리": None
+                        "아침": {},   # {메뉴명: 칼로리(float)}
+                        "점심": {},
+                        "저녁": {},
+                        "총_칼로리": None
                     }
 
-                def parse_menu(text):
-                    """메뉴명에서 알레르기 번호 제거: '배추김치(09)' → '배추김치'"""
+                def clean_name(text):
+                    """알레르기 번호 제거: '배추김치(09)(18)' → '배추김치'"""
                     if not text:
-                        return []
-                    items = [re.sub(r"\(\d+\)", "", t).strip() for t in text.split(",")]
-                    return [i for i in items if i]
+                        return None
+                    return re.sub(r"\(\d+\)", "", text).strip() or None
 
-                def add_cal(existing, new_val):  # 하위 호환용 (미사용)
-                    return existing
+                def clean_cal(text):
+                    """칼로리 숫자 추출: '17.87kcal' → 17.87"""
+                    if not text:
+                        return 0.0
+                    try:
+                        return float(text.replace("kcal","").strip())
+                    except:
+                        return 0.0
 
-                brst_menu = parse_menu(row.findtext(brst_tag))
-                lnch_menu = parse_menu(row.findtext(lnch_tag))
-                dinr_menu = parse_menu(row.findtext(dinr_tag))
+                # 1 row = 1 메뉴 1 칼로리 구조 → 딕셔너리로 저장 (중복 방지)
+                brst_name = clean_name(row.findtext(brst_tag))
+                lnch_name = clean_name(row.findtext(lnch_tag))
+                dinr_name = clean_name(row.findtext(dinr_tag))
 
-                if brst_menu:
-                    for m in brst_menu:
-                        if m not in meals[date]["아침"]:
-                            meals[date]["아침"].append(m)
-                if lnch_menu:
-                    for m in lnch_menu:
-                        if m not in meals[date]["점심"]:
-                            meals[date]["점심"].append(m)
-                if dinr_menu:
-                    for m in dinr_menu:
-                        if m not in meals[date]["저녁"]:
-                            meals[date]["저녁"].append(m)
+                if brst_name and brst_name not in meals[date]["아침"]:
+                    meals[date]["아침"][brst_name] = clean_cal(row.findtext(brst_cal))
+                if lnch_name and lnch_name not in meals[date]["점심"]:
+                    meals[date]["점심"][lnch_name] = clean_cal(row.findtext(lnch_cal))
+                if dinr_name and dinr_name not in meals[date]["저녁"]:
+                    meals[date]["저녁"][dinr_name] = clean_cal(row.findtext(dinr_cal))
 
-                # 칼로리는 첫 번째 값만 저장 (매 row 동일값이므로 중복 합산 방지)
-                # sum_cal은 매 row에 하루 전체 합계가 동일하게 들어있으므로 그냥 덮어쓰기
+                # sum_cal: 매 row에 동일한 하루 총합이 들어있으므로 덮어쓰기
                 if row.findtext(sum_cal_tag):
                     meals[date]["총_칼로리"] = row.findtext(sum_cal_tag).replace("kcal","").strip()
 
@@ -513,22 +514,25 @@ with tabs[2]:
 
     for meal_time, meal_tab in zip(["아침", "점심", "저녁"], meal_tabs[:3]):
         with meal_tab:
-            menu_list = today_meals.get(meal_time, [])
-            cal_info = today_meals.get(f"{meal_time}_칼로리") or "?"
+            menu_dict = today_meals.get(meal_time, {})  # {메뉴명: 칼로리}
 
-            if menu_list:
-                st.subheader(f"{meal_time} 메뉴 — {cal_info} kcal")
-                cols = st.columns(min(len(menu_list), 4))
-                for i, item in enumerate(menu_list):
+            if menu_dict:
+                meal_total_cal = sum(menu_dict.values())
+                st.subheader(f"{meal_time} 메뉴 — {meal_total_cal:.1f} kcal")
+                cols = st.columns(min(len(menu_dict), 4))
+                for i, (item, cal) in enumerate(menu_dict.items()):
                     with cols[i % 4]:
-                        st.info(f"🍽️ {item}")
+                        st.info(f"🍽️ {item}
+
+**{cal:.1f} kcal**")
 
                 st.divider()
                 st.markdown("**✅ 오늘 먹은 메뉴 체크**")
-                checked = []
-                for i, item in enumerate(menu_list):
-                    if st.checkbox(item, value=True, key=f"chk_{meal_time}_{i}_{item[:10]}"):
-                        checked.append(item)
+                checked = {}  # {메뉴명: 칼로리}
+                for i, (item, cal) in enumerate(menu_dict.items()):
+                    label = f"{item}  ({cal:.1f} kcal)"
+                    if st.checkbox(label, value=True, key=f"chk_{meal_time}_{i}_{item[:10]}"):
+                        checked[item] = cal
                 st.session_state.meal_log[meal_time] = checked
             else:
                 st.info(f"오늘 {meal_time} 식단 정보가 없습니다.")
@@ -537,25 +541,25 @@ with tabs[2]:
     with meal_tabs[3]:
         st.subheader("📊 오늘의 영양 섭취 분석")
 
-        # 체크된 메뉴 수집
-        all_checked = []
+        # 체크된 메뉴만 칼로리 합산
+        checked_menus = {}
         for meal_time in ["아침", "점심", "저녁"]:
-            all_checked.extend(st.session_state.meal_log.get(meal_time, []))
+            checked_menus[meal_time] = st.session_state.meal_log.get(meal_time, {})
 
-        # API에서 칼로리 합산
-        # sum_cal = API가 제공하는 하루 총 칼로리 (이미 합산된 값)
-        try:
-            total_cal = int(float(str(today_meals.get("총_칼로리") or "0").replace(",", "").replace("?", "0").replace("-", "0")))
-        except:
-            total_cal = 0
+        total_cal = sum(
+            cal for meal in checked_menus.values() for cal in meal.values()
+        )
+        all_checked = [item for meal in checked_menus.values() for item in meal]
 
         # 칼로리 달성률 표시
-        st.markdown("#### 🔥 칼로리")
-        cal_pct = min(int((total_cal / DAILY_RECOMMEND["칼로리"]) * 100), 100)
+        st.markdown("#### 🔥 섭취 칼로리 (체크한 메뉴 기준)")
+        api_total = today_meals.get("총_칼로리") or "?"
         col_name, col_bar = st.columns([1, 3])
         with col_name:
-            st.metric("총 칼로리", f"{total_cal} kcal")
+            st.metric("내가 먹은 칼로리", f"{total_cal:.1f} kcal")
+            st.caption(f"오늘 급식 총 칼로리: {api_total} kcal")
         with col_bar:
+            cal_pct = min(int((total_cal / DAILY_RECOMMEND["칼로리"]) * 100), 100)
             st.write("")
             st.progress(cal_pct / 100, text=f"{cal_pct}% (권장 {DAILY_RECOMMEND['칼로리']} kcal)")
 
@@ -569,9 +573,9 @@ with tabs[2]:
                 st.warning("먼저 아침/점심/저녁 탭에서 먹은 메뉴를 체크해주세요!")
             else:
                 menu_summary = {
-                    "아침": today_meals.get("아침", []),
-                    "점심": today_meals.get("점심", []),
-                    "저녁": today_meals.get("저녁", []),
+                    "아침": list(checked_menus["아침"].keys()),
+                    "점심": list(checked_menus["점심"].keys()),
+                    "저녁": list(checked_menus["저녁"].keys()),
                 }
                 with st.spinner("🔬 실제 식단을 분석 중입니다..."):
                     try:
@@ -581,7 +585,7 @@ with tabs[2]:
                         - 아침: {', '.join(menu_summary['아침']) or '없음'}
                         - 점심: {', '.join(menu_summary['점심']) or '없음'}
                         - 저녁: {', '.join(menu_summary['저녁']) or '없음'}
-                        - API 제공 총 칼로리: {total_cal} kcal
+                        - 내가 섭취한 칼로리: {total_cal:.1f} kcal
                         
                         다음을 분석해주세요:
                         1. 예상 주요 영양소 (탄수화물/단백질/지방/비타민/무기질) 충족 여부
