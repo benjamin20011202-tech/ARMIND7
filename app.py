@@ -81,6 +81,34 @@ def update_study_group(group_id: int, patch: dict):
     sb = get_supabase()
     sb.table("study_groups").update(patch).eq("id", group_id).execute()
 
+def delete_study_group(group_id: int):
+    """스터디 삭제"""
+    sb = get_supabase()
+    sb.table("study_groups").delete().eq("id", group_id).execute()
+
+def load_my_groups(session_key: str):
+    """내가 참여한 스터디 ID 목록 불러오기"""
+    try:
+        sb = get_supabase()
+        res = sb.table("user_sessions").select("my_groups").eq("session_key", session_key).execute()
+        if res.data:
+            return res.data[0]["my_groups"] or []
+        return []
+    except:
+        return []
+
+def save_my_groups(session_key: str, my_groups: list):
+    """내가 참여한 스터디 ID 목록 저장"""
+    try:
+        sb = get_supabase()
+        res = sb.table("user_sessions").select("id").eq("session_key", session_key).execute()
+        if res.data:
+            sb.table("user_sessions").update({"my_groups": my_groups}).eq("session_key", session_key).execute()
+        else:
+            sb.table("user_sessions").insert({"session_key": session_key, "my_groups": my_groups}).execute()
+    except:
+        pass
+
 defaults = {
     "messages": [],
     "risk_level": 0,
@@ -98,6 +126,13 @@ defaults = {
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+# 브라우저 세션 키 생성 (최초 1회)
+if "session_key" not in st.session_state:
+    import uuid
+    st.session_state.session_key = str(uuid.uuid4())
+    # Supabase에서 이전 참여 스터디 목록 복원
+    st.session_state.my_groups = load_my_groups(st.session_state.session_key)
 
 # ==========================================
 # 4. 분석 로직
@@ -688,6 +723,7 @@ with tabs[3]:
                     st.session_state.my_groups.append(matched["id"])
                     new_members = matched["members"] + ["나 (현재 사용자)"]
                     update_study_group(matched["id"], {"members": new_members})
+                    save_my_groups(st.session_state.session_key, st.session_state.my_groups)
                     st.success(f"✅ '{matched['name']}' 스터디에 참여했습니다!")
                     st.rerun()
 
@@ -719,6 +755,7 @@ with tabs[3]:
                             st.session_state.my_groups.remove(group["id"])
                             new_members = [m for m in group["members"] if m != "나 (현재 사용자)"]
                             update_study_group(group["id"], {"members": new_members})
+                            save_my_groups(st.session_state.session_key, st.session_state.my_groups)
                             st.rerun()
                     elif is_full:
                         st.warning("🔒 인원 마감")
@@ -727,6 +764,7 @@ with tabs[3]:
                             st.session_state.my_groups.append(group["id"])
                             new_members = group["members"] + ["나 (현재 사용자)"]
                             update_study_group(group["id"], {"members": new_members})
+                            save_my_groups(st.session_state.session_key, st.session_state.my_groups)
                             st.success(f"'{group['name']}' 스터디에 참여했습니다!")
                             st.rerun()
 
@@ -785,6 +823,7 @@ with tabs[3]:
                     new_db_id = save_study_group(new_group)
                     if new_db_id:
                         st.session_state.my_groups.append(new_db_id)
+                        save_my_groups(st.session_state.session_key, st.session_state.my_groups)
                     st.session_state.study_is_public = True
                     if is_public:
                         st.success(f"✅ '{new_name}' 스터디가 공개 생성되었습니다!")
@@ -806,15 +845,40 @@ with tabs[3]:
             selected_group_name = st.selectbox("스터디 선택", group_names)
             selected_group = next(g for g in my_groups_list if g["name"] == selected_group_name)
 
-            col_title, col_badge = st.columns([3, 1])
+            col_title, col_badge, col_del = st.columns([3, 1, 1])
             with col_title:
                 st.markdown(f"**{selected_group['name']}** | 👥 {len(selected_group['members'])}명 | 📖 {selected_group['subject']}")
             with col_badge:
                 if selected_group.get("public", True):
                     st.success("🌐 공개")
                 else:
-                    st.warning(f"🔒 비공개")
+                    st.warning("🔒 비공개")
                     st.code(selected_group.get("code", ""), language=None)
+            with col_del:
+                # 내가 만든 스터디(첫 번째 멤버)만 삭제 가능
+                is_owner = selected_group["members"] and selected_group["members"][0] == "나 (현재 사용자)"
+                if is_owner:
+                    if st.button("🗑️ 삭제", key=f"del_{selected_group['id']}", type="secondary", use_container_width=True):
+                        st.session_state[f"confirm_del_{selected_group['id']}"] = True
+                        st.rerun()
+
+            # 삭제 확인 팝업
+            if st.session_state.get(f"confirm_del_{selected_group['id']}", False):
+                st.error(f"⚠️ **'{selected_group['name']}'** 스터디를 정말 삭제할까요? 모든 채팅이 사라집니다.")
+                col_yes, col_no = st.columns(2)
+                with col_yes:
+                    if st.button("✅ 삭제 확인", key=f"yes_del_{selected_group['id']}", type="primary", use_container_width=True):
+                        delete_study_group(selected_group["id"])
+                        st.session_state.my_groups.remove(selected_group["id"])
+                        save_my_groups(st.session_state.session_key, st.session_state.my_groups)
+                        st.session_state.pop(f"confirm_del_{selected_group['id']}", None)
+                        st.success("삭제되었습니다.")
+                        st.rerun()
+                with col_no:
+                    if st.button("❌ 취소", key=f"no_del_{selected_group['id']}", use_container_width=True):
+                        st.session_state.pop(f"confirm_del_{selected_group['id']}", None)
+                        st.rerun()
+
             st.divider()
 
             # 채팅 메시지 표시
