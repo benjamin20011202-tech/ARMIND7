@@ -3,6 +3,7 @@ import time
 import json
 import base64
 from openai import OpenAI
+from supabase import create_client, Client
 
 # ==========================================
 # 1. 페이지 설정 및 디자인
@@ -27,22 +28,72 @@ else:
 # ==========================================
 # 3. 세션 상태 초기화
 # ==========================================
+# Supabase 클라이언트 초기화
+@st.cache_resource
+def get_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+def load_study_groups():
+    """Supabase에서 스터디 목록 불러오기"""
+    try:
+        sb = get_supabase()
+        res = sb.table("study_groups").select("*").order("created_at", desc=False).execute()
+        groups = []
+        for row in res.data:
+            groups.append({
+                "id": row["id"],
+                "name": row["name"],
+                "subject": row["subject"],
+                "description": row.get("description", ""),
+                "goal": row.get("goal", ""),
+                "max_members": row.get("max_members", 5),
+                "members": row.get("members") or [],
+                "chat": row.get("chat") or [],
+                "public": row.get("public", True),
+                "code": row.get("code"),
+            })
+        return groups
+    except Exception as e:
+        st.error(f"스터디 불러오기 오류: {e}")
+        return []
+
+def save_study_group(group: dict):
+    """새 스터디 Supabase에 저장"""
+    sb = get_supabase()
+    data = {
+        "name": group["name"],
+        "subject": group["subject"],
+        "description": group["description"],
+        "goal": group["goal"],
+        "max_members": group["max_members"],
+        "members": group["members"],
+        "chat": group["chat"],
+        "public": group["public"],
+        "code": group["code"],
+    }
+    res = sb.table("study_groups").insert(data).execute()
+    return res.data[0]["id"] if res.data else None
+
+def update_study_group(group_id: int, patch: dict):
+    """스터디 일부 업데이트 (멤버, 채팅 등)"""
+    sb = get_supabase()
+    sb.table("study_groups").update(patch).eq("id", group_id).execute()
+
 defaults = {
     "messages": [],
     "risk_level": 0,
     "ui_step": 0,
     "phq9_score": 0,
     "active_tab": "chat",
-    # 군백기 지우개 커뮤니티
-    "study_groups": [
-        {"id": 1, "name": "공무원 시험 준비반", "subject": "행정학/국어", "members": ["김일병", "이상병"], "max_members": 5, "chat": [], "description": "전역 후 공무원 도전! 함께 합시다.", "public": True, "code": None},
-        {"id": 2, "name": "자격증 스터디", "subject": "정보처리기사", "members": ["박병장"], "max_members": 4, "chat": [], "description": "IT 자격증 취득 목표 그룹입니다.", "public": True, "code": None},
-    ],
+    # 군백기 지우개 커뮤니티 (Supabase에서 로드)
+    "study_groups": [],
     "my_groups": [],
     "study_chat_input": {},
     "current_group_id": None,
     # 식단
-    "meal_log": {"아침": [], "점심": [], "저녁": []},
+    "meal_log": {"아침": {}, "점심": {}, "저녁": {}},
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -611,6 +662,9 @@ with tabs[3]:
     st.header("📚 군백기 지우개")
     st.markdown("전역 후 공백기를 없애자! 함께 공부하는 전우를 찾아요 💪")
 
+    # Supabase에서 최신 스터디 목록 로드
+    st.session_state.study_groups = load_study_groups()
+
     study_tabs = st.tabs(["🔍 스터디 찾기", "➕ 스터디 만들기", "💬 내 스터디"])
 
     # --- 스터디 찾기 ---
@@ -632,7 +686,8 @@ with tabs[3]:
                     st.warning("🔒 인원이 꽉 찼습니다.")
                 else:
                     st.session_state.my_groups.append(matched["id"])
-                    matched["members"].append("나 (현재 사용자)")
+                    new_members = matched["members"] + ["나 (현재 사용자)"]
+                    update_study_group(matched["id"], {"members": new_members})
                     st.success(f"✅ '{matched['name']}' 스터디에 참여했습니다!")
                     st.rerun()
 
@@ -662,14 +717,16 @@ with tabs[3]:
                         st.success("✅ 참여 중")
                         if st.button("탈퇴", key=f"leave_{group['id']}", type="secondary"):
                             st.session_state.my_groups.remove(group["id"])
-                            group["members"].remove("나 (현재 사용자)")
+                            new_members = [m for m in group["members"] if m != "나 (현재 사용자)"]
+                            update_study_group(group["id"], {"members": new_members})
                             st.rerun()
                     elif is_full:
                         st.warning("🔒 인원 마감")
                     else:
                         if st.button("참여하기", key=f"join_{group['id']}", type="primary"):
                             st.session_state.my_groups.append(group["id"])
-                            group["members"].append("나 (현재 사용자)")
+                            new_members = group["members"] + ["나 (현재 사용자)"]
+                            update_study_group(group["id"], {"members": new_members})
                             st.success(f"'{group['name']}' 스터디에 참여했습니다!")
                             st.rerun()
 
@@ -725,15 +782,16 @@ with tabs[3]:
                         "public": is_public,
                         "code": invite_code,
                     }
-                    st.session_state.study_groups.append(new_group)
-                    st.session_state.my_groups.append(new_id)
-                    # 생성 후 초기화
+                    new_db_id = save_study_group(new_group)
+                    if new_db_id:
+                        st.session_state.my_groups.append(new_db_id)
                     st.session_state.study_is_public = True
                     if is_public:
                         st.success(f"✅ '{new_name}' 스터디가 공개 생성되었습니다!")
                     else:
                         st.success(f"✅ '{new_name}' 스터디가 비공개 생성되었습니다!")
                         st.info(f"🔑 초대 코드: **{invite_code}**  ← 전우들에게 공유하세요!")
+                    st.rerun()
 
     # --- 내 스터디 (채팅) ---
     with study_tabs[2]:
@@ -780,21 +838,17 @@ with tabs[3]:
             if chat_msg:
                 import datetime
                 now = datetime.datetime.now().strftime("%H:%M")
-                selected_group["chat"].append({
-                    "sender": "나",
-                    "text": chat_msg,
-                    "time": now
-                })
+                new_chat = list(selected_group["chat"])
+                new_chat.append({"sender": "나", "text": chat_msg, "time": now})
 
-                # AI 스터디 도우미 응답 (가끔)
-                if api_key and len(selected_group["chat"]) % 3 == 0:
+                # AI 스터디 도우미 응답 (3번째 메시지마다)
+                if api_key and len(new_chat) % 3 == 0:
                     try:
                         client = OpenAI(api_key=api_key)
                         ai_prompt = f"""
                         당신은 스터디 그룹의 AI 학습 도우미입니다.
                         스터디 주제: {selected_group['subject']}
                         마지막 메시지: {chat_msg}
-                        
                         학습에 도움이 되는 짧은 응원/팁을 1-2문장으로 해주세요. 이모지 포함.
                         """
                         ai_resp = client.chat.completions.create(
@@ -802,11 +856,14 @@ with tabs[3]:
                             messages=[{"role": "user", "content": ai_prompt}],
                             max_tokens=100
                         )
-                        selected_group["chat"].append({
+                        new_chat.append({
                             "sender": "🤖 AI 스터디 도우미",
                             "text": ai_resp.choices[0].message.content,
                             "time": now
                         })
                     except:
                         pass
+
+                # Supabase에 채팅 저장
+                update_study_group(selected_group["id"], {"chat": new_chat})
                 st.rerun()
