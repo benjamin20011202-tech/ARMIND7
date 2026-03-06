@@ -677,15 +677,24 @@ with tabs[3]:
     with study_tabs[1]:
         st.subheader("✏️ 새 스터디 그룹 만들기")
 
-        # 공개 설정은 폼 밖에서 먼저 선택 (폼 안 radio는 submit 시 값 반영 안 되는 Streamlit 버그)
-        new_public = st.radio(
-            "🔓 공개 설정",
-            ["🌐 공개 (모집 목록에 표시)", "🔒 비공개 (초대 코드로만 입장)"],
-            key="new_public",
-            horizontal=True
-        )
-        if "비공개" in new_public:
-            st.info("🔑 생성 시 6자리 초대 코드가 자동 발급됩니다.")
+        # 공개/비공개 선택을 세션에 명시적으로 저장
+        if "study_is_public" not in st.session_state:
+            st.session_state.study_is_public = True
+
+        col_pub1, col_pub2 = st.columns(2)
+        with col_pub1:
+            if st.button("🌐 공개", type="primary" if st.session_state.study_is_public else "secondary", use_container_width=True):
+                st.session_state.study_is_public = True
+                st.rerun()
+        with col_pub2:
+            if st.button("🔒 비공개", type="primary" if not st.session_state.study_is_public else "secondary", use_container_width=True):
+                st.session_state.study_is_public = False
+                st.rerun()
+
+        if st.session_state.study_is_public:
+            st.success("🌐 공개 — 모집 목록에 표시됩니다.")
+        else:
+            st.info("🔒 비공개 — 생성 시 6자리 초대 코드가 자동 발급됩니다.")
 
         with st.form("create_study_form"):
             new_name = st.text_input("스터디 이름 *", placeholder="예: 2025 공무원 합격반")
@@ -701,7 +710,7 @@ with tabs[3]:
                     st.error("이름, 과목, 소개는 필수 입력사항입니다.")
                 else:
                     import random, string
-                    is_public = "공개" in st.session_state.get("new_public", "공개")
+                    is_public = st.session_state.study_is_public  # 폼 밖 버튼으로 저장된 값 사용
                     invite_code = None if is_public else "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
                     new_id = max([g["id"] for g in st.session_state.study_groups], default=0) + 1
                     new_group = {
@@ -718,6 +727,8 @@ with tabs[3]:
                     }
                     st.session_state.study_groups.append(new_group)
                     st.session_state.my_groups.append(new_id)
+                    # 생성 후 초기화
+                    st.session_state.study_is_public = True
                     if is_public:
                         st.success(f"✅ '{new_name}' 스터디가 공개 생성되었습니다!")
                     else:
