@@ -522,9 +522,7 @@ with tabs[2]:
                 cols = st.columns(min(len(menu_dict), 4))
                 for i, (item, cal) in enumerate(menu_dict.items()):
                     with cols[i % 4]:
-                        st.info(f"🍽️ {item}
-
-**{cal:.1f} kcal**")
+                        st.info(f"🍽️ {item}  |  {cal:.1f} kcal")
 
                 st.divider()
                 st.markdown("**✅ 오늘 먹은 메뉴 체크**")
