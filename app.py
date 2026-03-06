@@ -447,13 +447,8 @@ with tabs[2]:
                             meals[date]["저녁"].append(m)
 
                 # 칼로리는 첫 번째 값만 저장 (매 row 동일값이므로 중복 합산 방지)
-                if meals[date]["아침_칼로리"] is None and row.findtext(brst_cal):
-                    meals[date]["아침_칼로리"] = row.findtext(brst_cal).replace("kcal","").strip()
-                if meals[date]["점심_칼로리"] is None and row.findtext(lnch_cal):
-                    meals[date]["점심_칼로리"] = row.findtext(lnch_cal).replace("kcal","").strip()
-                if meals[date]["저녁_칼로리"] is None and row.findtext(dinr_cal):
-                    meals[date]["저녁_칼로리"] = row.findtext(dinr_cal).replace("kcal","").strip()
-                if meals[date]["총_칼로리"] is None and row.findtext(sum_cal_tag):
+                # sum_cal은 매 row에 하루 전체 합계가 동일하게 들어있으므로 그냥 덮어쓰기
+                if row.findtext(sum_cal_tag):
                     meals[date]["총_칼로리"] = row.findtext(sum_cal_tag).replace("kcal","").strip()
 
             return meals, None, list(meals.keys())
@@ -548,13 +543,11 @@ with tabs[2]:
             all_checked.extend(st.session_state.meal_log.get(meal_time, []))
 
         # API에서 칼로리 합산
-        total_cal = 0
-        for meal_time in ["아침", "점심", "저녁"]:
-            cal_str = today_meals.get(f"{meal_time}_칼로리") or "0"
-            try:
-                total_cal += int(str(cal_str).replace(",", "").replace("?", "0").replace("-", "0"))
-            except:
-                pass
+        # sum_cal = API가 제공하는 하루 총 칼로리 (이미 합산된 값)
+        try:
+            total_cal = int(float(str(today_meals.get("총_칼로리") or "0").replace(",", "").replace("?", "0").replace("-", "0")))
+        except:
+            total_cal = 0
 
         # 칼로리 달성률 표시
         st.markdown("#### 🔥 칼로리")
