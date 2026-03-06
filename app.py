@@ -35,8 +35,8 @@ defaults = {
     "active_tab": "chat",
     # 군백기 지우개 커뮤니티
     "study_groups": [
-        {"id": 1, "name": "공무원 시험 준비반", "subject": "행정학/국어", "members": ["김일병", "이상병"], "max_members": 5, "chat": [], "description": "전역 후 공무원 도전! 함께 합시다."},
-        {"id": 2, "name": "자격증 스터디", "subject": "정보처리기사", "members": ["박병장"], "max_members": 4, "chat": [], "description": "IT 자격증 취득 목표 그룹입니다."},
+        {"id": 1, "name": "공무원 시험 준비반", "subject": "행정학/국어", "members": ["김일병", "이상병"], "max_members": 5, "chat": [], "description": "전역 후 공무원 도전! 함께 합시다.", "public": True, "code": None},
+        {"id": 2, "name": "자격증 스터디", "subject": "정보처리기사", "members": ["박병장"], "max_members": 4, "chat": [], "description": "IT 자격증 취득 목표 그룹입니다.", "public": True, "code": None},
     ],
     "my_groups": [],
     "study_chat_input": {},
@@ -619,7 +619,27 @@ with tabs[3]:
 
         search_keyword = st.text_input("🔍 스터디 검색", placeholder="키워드를 입력하세요 (예: 공무원, 자격증...)")
 
+        # 비공개 입장 코드 입력
+        with st.expander("🔒 초대 코드로 비공개 스터디 참여"):
+            invite_code = st.text_input("초대 코드 입력", placeholder="예: AB12CD", key="invite_code_input")
+            if st.button("코드로 참여하기", key="join_by_code"):
+                matched = next((g for g in st.session_state.study_groups if g.get("code") == invite_code.strip().upper()), None)
+                if not matched:
+                    st.error("❌ 유효하지 않은 코드입니다.")
+                elif matched["id"] in st.session_state.my_groups:
+                    st.warning("이미 참여 중인 스터디입니다.")
+                elif len(matched["members"]) >= matched["max_members"]:
+                    st.warning("🔒 인원이 꽉 찼습니다.")
+                else:
+                    st.session_state.my_groups.append(matched["id"])
+                    matched["members"].append("나 (현재 사용자)")
+                    st.success(f"✅ '{matched['name']}' 스터디에 참여했습니다!")
+                    st.rerun()
+
+        st.divider()
         for group in st.session_state.study_groups:
+            if not group.get("public", True):  # 비공개 스터디는 목록에서 숨김
+                continue
             name_match = search_keyword.lower() in group["name"].lower() if search_keyword else True
             subj_match = search_keyword.lower() in group["subject"].lower() if search_keyword else True
             if not (name_match or subj_match):
@@ -663,13 +683,17 @@ with tabs[3]:
             new_desc = st.text_area("스터디 소개 *", placeholder="스터디 목표와 활동 방식을 소개해주세요.")
             new_max = st.slider("최대 인원", min_value=2, max_value=10, value=5)
             new_goal = st.text_input("목표 (선택)", placeholder="예: 전역 후 6개월 내 합격")
-            
+            new_public = st.radio("공개 설정", ["🌐 공개 (모집 목록에 표시)", "🔒 비공개 (초대 코드로만 입장)"], key="new_public")
+
             submitted = st.form_submit_button("🚀 스터디 생성하기", type="primary", use_container_width=True)
 
             if submitted:
                 if not new_name or not new_subject or not new_desc:
                     st.error("이름, 과목, 소개는 필수 입력사항입니다.")
                 else:
+                    import random, string
+                    is_public = "공개" in new_public
+                    invite_code = None if is_public else "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
                     new_id = max([g["id"] for g in st.session_state.study_groups], default=0) + 1
                     new_group = {
                         "id": new_id,
@@ -679,11 +703,17 @@ with tabs[3]:
                         "max_members": new_max,
                         "chat": [],
                         "description": new_desc,
-                        "goal": new_goal
+                        "goal": new_goal,
+                        "public": is_public,
+                        "code": invite_code,
                     }
                     st.session_state.study_groups.append(new_group)
                     st.session_state.my_groups.append(new_id)
-                    st.success(f"✅ '{new_name}' 스터디가 생성되었습니다! '내 스터디' 탭에서 확인하세요.")
+                    if is_public:
+                        st.success(f"✅ '{new_name}' 스터디가 공개 생성되었습니다! 모집 목록에서 확인할 수 있어요.")
+                    else:
+                        st.success(f"✅ '{new_name}' 스터디가 비공개 생성되었습니다!")
+                        st.info(f"🔑 초대 코드: **{invite_code}**  ← 전우들에게 공유하세요!")
 
     # --- 내 스터디 (채팅) ---
     with study_tabs[2]:
@@ -698,7 +728,15 @@ with tabs[3]:
             selected_group_name = st.selectbox("스터디 선택", group_names)
             selected_group = next(g for g in my_groups_list if g["name"] == selected_group_name)
 
-            st.markdown(f"**{selected_group['name']}** | 👥 {len(selected_group['members'])}명 | 📖 {selected_group['subject']}")
+            col_title, col_badge = st.columns([3, 1])
+            with col_title:
+                st.markdown(f"**{selected_group['name']}** | 👥 {len(selected_group['members'])}명 | 📖 {selected_group['subject']}")
+            with col_badge:
+                if selected_group.get("public", True):
+                    st.success("🌐 공개")
+                else:
+                    st.warning(f"🔒 비공개")
+                    st.code(selected_group.get("code", ""), language=None)
             st.divider()
 
             # 채팅 메시지 표시
