@@ -677,13 +677,22 @@ with tabs[3]:
     with study_tabs[1]:
         st.subheader("✏️ 새 스터디 그룹 만들기")
 
+        # 공개 설정은 폼 밖에서 먼저 선택 (폼 안 radio는 submit 시 값 반영 안 되는 Streamlit 버그)
+        new_public = st.radio(
+            "🔓 공개 설정",
+            ["🌐 공개 (모집 목록에 표시)", "🔒 비공개 (초대 코드로만 입장)"],
+            key="new_public",
+            horizontal=True
+        )
+        if "비공개" in new_public:
+            st.info("🔑 생성 시 6자리 초대 코드가 자동 발급됩니다.")
+
         with st.form("create_study_form"):
             new_name = st.text_input("스터디 이름 *", placeholder="예: 2025 공무원 합격반")
             new_subject = st.text_input("공부 과목/분야 *", placeholder="예: 행정학, 국어, 영어")
             new_desc = st.text_area("스터디 소개 *", placeholder="스터디 목표와 활동 방식을 소개해주세요.")
             new_max = st.slider("최대 인원", min_value=2, max_value=10, value=5)
             new_goal = st.text_input("목표 (선택)", placeholder="예: 전역 후 6개월 내 합격")
-            new_public = st.radio("공개 설정", ["🌐 공개 (모집 목록에 표시)", "🔒 비공개 (초대 코드로만 입장)"], key="new_public")
 
             submitted = st.form_submit_button("🚀 스터디 생성하기", type="primary", use_container_width=True)
 
@@ -692,7 +701,7 @@ with tabs[3]:
                     st.error("이름, 과목, 소개는 필수 입력사항입니다.")
                 else:
                     import random, string
-                    is_public = "공개" in new_public
+                    is_public = "공개" in st.session_state.get("new_public", "공개")
                     invite_code = None if is_public else "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
                     new_id = max([g["id"] for g in st.session_state.study_groups], default=0) + 1
                     new_group = {
@@ -710,7 +719,7 @@ with tabs[3]:
                     st.session_state.study_groups.append(new_group)
                     st.session_state.my_groups.append(new_id)
                     if is_public:
-                        st.success(f"✅ '{new_name}' 스터디가 공개 생성되었습니다! 모집 목록에서 확인할 수 있어요.")
+                        st.success(f"✅ '{new_name}' 스터디가 공개 생성되었습니다!")
                     else:
                         st.success(f"✅ '{new_name}' 스터디가 비공개 생성되었습니다!")
                         st.info(f"🔑 초대 코드: **{invite_code}**  ← 전우들에게 공유하세요!")
