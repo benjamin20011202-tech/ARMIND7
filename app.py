@@ -416,7 +416,7 @@ with tabs[2]:
                 if date not in meals:
                     meals[date] = {
                         "아침": [], "점심": [], "저녁": [],
-                        "아침_칼로리": "0", "점심_칼로리": "0", "저녁_칼로리": "0", "총_칼로리": "?"
+                        "아침_칼로리": None, "점심_칼로리": None, "저녁_칼로리": None, "총_칼로리": None
                     }
 
                 def parse_menu(text):
@@ -426,14 +426,8 @@ with tabs[2]:
                     items = [re.sub(r"\(\d+\)", "", t).strip() for t in text.split(",")]
                     return [i for i in items if i]
 
-                def add_cal(existing, new_val):
-                    """칼로리 누적 합산"""
-                    try:
-                        e = float(existing.replace("kcal","").strip() or 0)
-                        n = float((new_val or "0").replace("kcal","").strip() or 0)
-                        return str(round(e + n))
-                    except:
-                        return existing
+                def add_cal(existing, new_val):  # 하위 호환용 (미사용)
+                    return existing
 
                 brst_menu = parse_menu(row.findtext(brst_tag))
                 lnch_menu = parse_menu(row.findtext(lnch_tag))
@@ -443,21 +437,24 @@ with tabs[2]:
                     for m in brst_menu:
                         if m not in meals[date]["아침"]:
                             meals[date]["아침"].append(m)
-                    meals[date]["아침_칼로리"] = add_cal(meals[date]["아침_칼로리"], row.findtext(brst_cal))
                 if lnch_menu:
                     for m in lnch_menu:
                         if m not in meals[date]["점심"]:
                             meals[date]["점심"].append(m)
-                    meals[date]["점심_칼로리"] = add_cal(meals[date]["점심_칼로리"], row.findtext(lnch_cal))
                 if dinr_menu:
                     for m in dinr_menu:
                         if m not in meals[date]["저녁"]:
                             meals[date]["저녁"].append(m)
-                    meals[date]["저녁_칼로리"] = add_cal(meals[date]["저녁_칼로리"], row.findtext(dinr_cal))
 
-                sum_cal = row.findtext(sum_cal_tag)
-                if sum_cal:
-                    meals[date]["총_칼로리"] = sum_cal.replace("kcal","").strip()
+                # 칼로리는 첫 번째 값만 저장 (매 row 동일값이므로 중복 합산 방지)
+                if meals[date]["아침_칼로리"] is None and row.findtext(brst_cal):
+                    meals[date]["아침_칼로리"] = row.findtext(brst_cal).replace("kcal","").strip()
+                if meals[date]["점심_칼로리"] is None and row.findtext(lnch_cal):
+                    meals[date]["점심_칼로리"] = row.findtext(lnch_cal).replace("kcal","").strip()
+                if meals[date]["저녁_칼로리"] is None and row.findtext(dinr_cal):
+                    meals[date]["저녁_칼로리"] = row.findtext(dinr_cal).replace("kcal","").strip()
+                if meals[date]["총_칼로리"] is None and row.findtext(sum_cal_tag):
+                    meals[date]["총_칼로리"] = row.findtext(sum_cal_tag).replace("kcal","").strip()
 
             return meals, None, list(meals.keys())
         except Exception as e:
@@ -522,7 +519,7 @@ with tabs[2]:
     for meal_time, meal_tab in zip(["아침", "점심", "저녁"], meal_tabs[:3]):
         with meal_tab:
             menu_list = today_meals.get(meal_time, [])
-            cal_info = today_meals.get(f"{meal_time}_칼로리", "?")
+            cal_info = today_meals.get(f"{meal_time}_칼로리") or "?"
 
             if menu_list:
                 st.subheader(f"{meal_time} 메뉴 — {cal_info} kcal")
@@ -553,7 +550,7 @@ with tabs[2]:
         # API에서 칼로리 합산
         total_cal = 0
         for meal_time in ["아침", "점심", "저녁"]:
-            cal_str = today_meals.get(f"{meal_time}_칼로리", "0")
+            cal_str = today_meals.get(f"{meal_time}_칼로리") or "0"
             try:
                 total_cal += int(str(cal_str).replace(",", "").replace("?", "0").replace("-", "0"))
             except:
