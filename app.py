@@ -594,7 +594,8 @@ with tabs[2]:
                        "아침_칼로리": "-", "점심_칼로리": "-", "저녁_칼로리": "-"}
     else:
         today_meals = meal_data[selected_date_str]
-        st.success(f"✅ {selected_date.strftime('%Y년 %m월 %d일')} 제6335부대 식단 불러오기 완료!")
+        unit_code = MND_SERVICE.split("_")[-1]
+        st.success(f"✅ {selected_date.strftime('%Y년 %m월 %d일')} 제{unit_code}부대 식단 불러오기 완료!")
 
     meal_tabs = st.tabs(["🌅 아침", "☀️ 점심", "🌙 저녁", "📊 영양 분석"])
 
