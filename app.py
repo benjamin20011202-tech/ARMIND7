@@ -378,8 +378,7 @@ PRODUCT_LIST = [
     {"브랜드": "트리트룸", "제품명": "시그니처 트리트먼트 화이트머스크", "용량": "1077ml", "가격": 8910, "비고": ""},
 ]
 
-PRODUCT_CATALOG_STR = "
-".join([
+PRODUCT_CATALOG_STR = "\n".join([
     f"- {p['브랜드']} {p['제품명']} ({p['용량']}) {p['가격']:,}원" + (f" [{p['비고']}]" if p['비고'] and p['비고'] != 'SOLD OUT' else " [품절]" if p['비고'] == 'SOLD OUT' else "")
     for p in PRODUCT_LIST
 ])
