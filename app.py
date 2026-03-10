@@ -549,7 +549,7 @@ with tabs[2]:
         import requests, xml.etree.ElementTree as ET
         url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/{start}/{end}/"
         try:
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=(10, 60))  # 연결 10초, 데이터 수신 60초
             resp.encoding = "utf-8"
             raw = resp.text
             debug_info = {"url": url, "status": resp.status_code, "raw_preview": raw[:500]}
@@ -645,41 +645,52 @@ with tabs[2]:
     selected_date_str = selected_date.strftime("%Y%m%d")
     selected_ym = selected_date.strftime("%Y%m")
 
+    # 요일별 샘플 식단 (API 실패 시 fallback)
+    SAMPLE_MEALS = {
+        0: {"아침": {"쌀밥": 355.0, "미역국": 19.0, "계란후라이": 95.0, "배추김치": 8.0, "깍두기": 10.0}, "점심": {"잡곡밥": 366.0, "부대찌개": 367.0, "제육볶음": 659.0, "도라지무침": 35.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "참치김치찌개": 109.0, "닭고기고추장조림": 311.0, "시금치나물": 30.0, "배추김치": 8.0}, "총_칼로리": "3042"},
+        1: {"아침": {"쌀밥": 355.0, "콩나물국": 19.0, "소시지볶음": 224.0, "무말랭이무침": 41.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "순대국": 367.0, "양념깻잎지무침": 22.0, "치즈말이어묵조림": 144.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "쇠고기무국": 37.0, "떡갈비칠리조림": 347.0, "파김치": 23.0, "배추김치": 8.0}, "총_칼로리": "3115"},
+        2: {"아침": {"쌀밥": 355.0, "된장찌개": 80.0, "두부조림": 100.0, "숙주나물": 17.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "돼지고기무찌개": 63.0, "돈등갈비찜": 863.0, "양배추쌈": 40.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "조갯살미역국": 19.0, "비엔나소시지케찹볶음": 224.0, "파김치": 23.0, "배추김치": 8.0}, "총_칼로리": "3385"},
+        3: {"아침": {"장조림버터비빔밥": 595.0, "콩나물국": 19.0, "무말랭이무침": 41.0, "배추김치": 8.0}, "점심": {"쌀밥": 355.0, "닭볶음탕": 300.0, "김치전": 166.0, "도라지무침": 35.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "순두부찌개": 120.0, "불고기": 250.0, "시금치나물": 30.0, "배추김치": 8.0}, "총_칼로리": "3290"},
+        4: {"아침": {"쌀밥": 355.0, "미역국": 19.0, "계란후라이": 95.0, "배추김치": 8.0, "깍두기": 10.0}, "점심": {"잡곡밥": 366.0, "부대찌개": 367.0, "치즈불닭": 370.0, "파김치": 23.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "참치김치찌개": 109.0, "제육볶음": 659.0, "숙주나물": 17.0, "배추김치": 8.0}, "총_칼로리": "3369"},
+        5: {"아침": {"쌀밥": 355.0, "콩나물국": 19.0, "두부조림": 100.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "소갈비탕": 300.0, "잡채": 200.0, "깍두기": 10.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "된장찌개": 80.0, "닭강정": 350.0, "무생채": 25.0, "배추김치": 8.0}, "총_칼로리": "3184"},
+        6: {"아침": {"쌀밥": 355.0, "미역국": 19.0, "소시지볶음": 224.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "부대찌개": 367.0, "떡갈비": 347.0, "도라지무침": 35.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "콩나물국": 19.0, "제육볶음": 659.0, "파김치": 23.0, "배추김치": 8.0}, "총_칼로리": "3042"},
+    }
+
     @st.cache_data(ttl=86400)
     def get_total_count():
-        """총 데이터 건수를 가져와서 최근 데이터 위치를 계산"""
         import requests, xml.etree.ElementTree as ET
         url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/1/1/"
         try:
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=(10, 30))
             root = ET.fromstring(resp.text)
             total = root.findtext("list_total_count")
-            return int(total) if total else 3755
+            return int(total) if total else None
         except:
-            return 3755
+            return None
 
     with st.spinner("📡 부대 식단을 불러오는 중..."):
         total_count = get_total_count()
-        meal_data, api_error, available_dates = fetch_mnd_meal(selected_ym, start=1, end=total_count)
 
-    if api_error:
-        st.error(f"⚠️ API 연결 오류: {api_error}")
-        st.info("샘플 데이터로 표시합니다.")
-        today_meals = {
-            "아침": {"흰쌀밥": 300.0, "된장찌개": 80.0, "계란후라이": 90.0, "김치": 20.0},
-            "점심": {"잡곡밥": 320.0, "부대찌개": 250.0, "제육볶음": 280.0, "깍두기": 15.0},
-            "저녁": {"흰쌀밥": 300.0, "순두부찌개": 120.0, "불고기": 250.0, "시금치나물": 30.0},
-            "총_칼로리": "2055",
-        }
-    elif selected_date_str not in meal_data:
-        st.warning(f"📭 {selected_date.strftime('%Y년 %m월 %d일')} 식단 데이터가 없습니다.")
-        if available_dates:
-            st.info(f"💡 이 달에 데이터가 있는 날짜: {', '.join(available_dates[:5])}")
-        today_meals = {"아침": {}, "점심": {}, "저녁": {}, "총_칼로리": None}
+    if total_count is None:
+        # API 접속 불가 → 샘플 fallback
+        weekday = selected_date.weekday()
+        today_meals = SAMPLE_MEALS[weekday]
+        st.warning("⚠️ 국방부 API 접속 불가 — 샘플 식단으로 표시합니다. (한국 서버 배포 시 실제 데이터 연동)")
     else:
-        today_meals = meal_data[selected_date_str]
-        unit_code = MND_SERVICE.split("_")[-1]
-        st.success(f"✅ {selected_date.strftime('%Y년 %m월 %d일')} 제{unit_code}부대 식단 불러오기 완료!")
+        with st.spinner("📡 식단 데이터를 불러오는 중..."):
+            meal_data, api_error, available_dates = fetch_mnd_meal(selected_ym, start=1, end=total_count)
+
+        if api_error or selected_date_str not in meal_data:
+            weekday = selected_date.weekday()
+            today_meals = SAMPLE_MEALS[weekday]
+            if api_error:
+                st.warning(f"⚠️ API 오류 — 샘플 식단으로 표시합니다.")
+            else:
+                st.warning(f"📭 {selected_date.strftime('%Y년 %m월 %d일')} 데이터 없음 — 샘플 식단으로 표시합니다.")
+        else:
+            today_meals = meal_data[selected_date_str]
+            unit_code = MND_SERVICE.split("_")[-1]
+            st.success(f"✅ {selected_date.strftime('%Y년 %m월 %d일')} 제{unit_code}부대 실제 식단 불러오기 완료!")
 
     meal_tabs = st.tabs(["🌅 아침", "☀️ 점심", "🌙 저녁", "📊 영양 분석"])
 
