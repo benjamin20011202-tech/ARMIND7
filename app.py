@@ -679,13 +679,13 @@ with tabs[2]:
     st.header("🥗 군 식단 영양 분석")
     st.markdown("오늘 급식에서 부족한 영양소를 확인하고 보충하세요!")
 
-    # 일일 권장 섭취량 (성인 남성 기준 - 장병)
+    # 일일 권장 섭취량
     DAILY_RECOMMEND = {
         "칼로리": 2700, "탄수화물": 330, "단백질": 65, "지방": 75,
         "비타민C": 100, "칼슘": 800, "철분": 12
     }
 
-    # ── 국방부 공공API 호출 (3회 재시도 적용) ──
+    # ── 국방부 공공API 호출 (3회 재시도 & 예외처리 완벽 적용) ──
     MND_API_KEY = st.secrets.get("MND_API_KEY", "")
     MND_SERVICE = st.secrets.get("MND_SERVICE", "DS_TB_MNDT_DATEBYMLSVC_6335")
 
@@ -705,14 +705,8 @@ with tabs[2]:
                 if first_row is None:
                     return {}, None, []
 
-                date_tag = "dates"
-                brst_tag = "brst"
-                lnch_tag = "lunc"
-                dinr_tag = "dinr"
-                brst_cal = "brst_cal"
-                lnch_cal = "lunc_cal"
-                dinr_cal = "dinr_cal"
-                sum_cal_tag = "sum_cal"
+                date_tag, brst_tag, lnch_tag, dinr_tag = "dates", "brst", "lunc", "dinr"
+                brst_cal, lnch_cal, dinr_cal, sum_cal_tag = "brst_cal", "lunc_cal", "dinr_cal", "sum_cal"
 
                 meals = {}
                 for row in root.iter("row"):
@@ -737,14 +731,11 @@ with tabs[2]:
                         except:
                             return 0.0
 
-                    brst_name = clean_name(row.findtext(brst_tag))
-                    lnch_name = clean_name(row.findtext(lnch_tag))
-                    dinr_name = clean_name(row.findtext(dinr_tag))
+                    b_name, l_name, d_name = clean_name(row.findtext(brst_tag)), clean_name(row.findtext(lnch_tag)), clean_name(row.findtext(dinr_tag))
 
-                    if brst_name and brst_name not in meals[date]["아침"]: meals[date]["아침"][brst_name] = clean_cal(row.findtext(brst_cal))
-                    if lnch_name and lnch_name not in meals[date]["점심"]: meals[date]["점심"][lnch_name] = clean_cal(row.findtext(lnch_cal))
-                    if dinr_name and dinr_name not in meals[date]["저녁"]: meals[date]["저녁"][dinr_name] = clean_cal(row.findtext(dinr_cal))
-
+                    if b_name and b_name not in meals[date]["아침"]: meals[date]["아침"][b_name] = clean_cal(row.findtext(brst_cal))
+                    if l_name and l_name not in meals[date]["점심"]: meals[date]["점심"][l_name] = clean_cal(row.findtext(lnch_cal))
+                    if d_name and d_name not in meals[date]["저녁"]: meals[date]["저녁"][d_name] = clean_cal(row.findtext(dinr_cal))
                     if row.findtext(sum_cal_tag): meals[date]["총_칼로리"] = row.findtext(sum_cal_tag).replace("kcal","").strip()
 
                 return meals, None, list(meals.keys())
@@ -770,7 +761,6 @@ with tabs[2]:
             time.sleep(1.0)
         return None
 
-    # --- 여기서부터 날짜 선택 UI가 다시 추가되었습니다! ---
     import datetime
     today = datetime.date.today()
     
@@ -786,7 +776,6 @@ with tabs[2]:
     selected_date_str = selected_date.strftime("%Y%m%d")
     selected_ym = selected_date.strftime("%Y%m")
 
-    # 요일별 샘플 식단 (API 실패 시 fallback)
     SAMPLE_MEALS = {
         0: {"아침": {"쌀밥": 355.0, "미역국": 19.0, "계란후라이": 95.0, "배추김치": 8.0, "깍두기": 10.0}, "점심": {"잡곡밥": 366.0, "부대찌개": 367.0, "제육볶음": 659.0, "도라지무침": 35.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "참치김치찌개": 109.0, "닭고기고추장조림": 311.0, "시금치나물": 30.0, "배추김치": 8.0}, "총_칼로리": "3042"},
         1: {"아침": {"쌀밥": 355.0, "콩나물국": 19.0, "소시지볶음": 224.0, "무말랭이무침": 41.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "순대국": 367.0, "양념깻잎지무침": 22.0, "치즈말이어묵조림": 144.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "쇠고기무국": 37.0, "떡갈비칠리조림": 347.0, "파김치": 23.0, "배추김치": 8.0}, "총_칼로리": "3115"},
@@ -803,7 +792,6 @@ with tabs[2]:
     today_meals = {}
     unit_code = ""
 
-    # 1. API 키 오류이거나 서버가 죽었을 때
     if total_count is None:
         st.warning("📡 API 인증 대기 중이거나 서버 지연으로 임시 식단 데이터를 불러옵니다.")
         weekday = selected_date.weekday()
@@ -813,13 +801,11 @@ with tabs[2]:
         with st.spinner("📡 식단 데이터를 불러오는 중..."):
             meal_data, api_error, available_dates = fetch_mnd_meal(selected_ym, start=1, end=total_count)
 
-        # 2. 데이터 파싱 중 에러가 났거나, 오늘 날짜 데이터가 비어있을 때
         if api_error or selected_date_str not in meal_data:
             st.warning("📡 오늘 날짜의 식단 데이터가 없어 임시 식단을 불러옵니다.")
             weekday = selected_date.weekday()
             today_meals = SAMPLE_MEALS.get(weekday, SAMPLE_MEALS[0])
             unit_code = "7 (샘플)"
-        # 3. 정상적으로 데이터를 가져왔을 때
         else:
             today_meals = meal_data[selected_date_str]
             unit_code = MND_SERVICE.split("_")[-1]
@@ -829,12 +815,12 @@ with tabs[2]:
 
     for meal_time, meal_tab in zip(["아침", "점심", "저녁"], meal_tabs[:3]):
         with meal_tab:
-            menu_dict = today_meals.get(meal_time, {})  # {메뉴명: 칼로리}
+            menu_dict = today_meals.get(meal_time, {}) 
 
             if menu_dict:
                 meal_total_cal = sum(menu_dict.values())
                 st.subheader(f"{meal_time} 메뉴 — {meal_total_cal:.1f} kcal")
-                cols = st.columns(min(len(menu_dict), 4))
+                cols = st.columns(min(len(menu_dict), 4) if len(menu_dict) > 0 else 1)
                 for i, (item, cal) in enumerate(menu_dict.items()):
                     with cols[i % 4]:
                         st.info(f"🍽️ {item}  |  {cal:.1f} kcal")
@@ -850,7 +836,6 @@ with tabs[2]:
             else:
                 st.info(f"오늘 {meal_time} 식단 정보가 없습니다.")
 
-    # 영양 분석 탭
     with meal_tabs[3]:
         st.subheader("📊 오늘의 영양 섭취 분석")
 
@@ -897,12 +882,10 @@ with tabs[2]:
                         - 내가 섭취한 칼로리: {total_cal:.1f} kcal
                         
                         다음을 분석해주세요:
-                        1. 예상 주요 영양소 (탄수화물/단백질/지방/비타민/무기질) 충족 여부
+                        1. 예상 주요 영양소 충족 여부
                         2. 부족할 것으로 예상되는 영양소 2-3가지
                         3. 군 PX에서 구할 수 있는 보충 간식 추천 3가지
                         4. 내일 훈련/업무를 위한 한 줄 조언
-                        
-                        이모지와 함께 친근하게 답변해주세요.
                         """
                         response = client.chat.completions.create(
                             model="gpt-4o-mini",
@@ -921,7 +904,6 @@ with tabs[3]:
     st.header("📚 군백기 지우개")
     st.markdown("전역 후 공백기를 없애자! 함께 공부하는 전우를 찾아요 💪")
 
-    # Supabase에서 최신 스터디 목록 로드
     st.session_state.study_groups = load_study_groups()
 
     study_tabs = st.tabs(["🔍 스터디 찾기", "➕ 스터디 만들기", "💬 내 스터디"])
@@ -929,10 +911,8 @@ with tabs[3]:
     # --- 스터디 찾기 ---
     with study_tabs[0]:
         st.subheader("📋 현재 모집 중인 스터디")
-
         search_keyword = st.text_input("🔍 스터디 검색", placeholder="키워드를 입력하세요 (예: 공무원, 자격증...)")
 
-        # 비공개 입장 코드 입력
         with st.expander("🔒 초대 코드로 비공개 스터디 참여"):
             invite_code = st.text_input("초대 코드 입력", placeholder="예: AB12CD", key="invite_code_input")
             if st.button("코드로 참여하기", key="join_by_code"):
@@ -953,7 +933,7 @@ with tabs[3]:
 
         st.divider()
         for group in st.session_state.study_groups:
-            if not group.get("public", True):  # 비공개 스터디는 목록에서 숨김
+            if not group.get("public", True):
                 continue
             name_match = search_keyword.lower() in group["name"].lower() if search_keyword else True
             subj_match = search_keyword.lower() in group["subject"].lower() if search_keyword else True
@@ -966,8 +946,7 @@ with tabs[3]:
                     st.markdown(f"### 📖 {group['name']}")
                     st.markdown(f"**과목:** {group['subject']}")
                     st.markdown(f"**설명:** {group['description']}")
-                    member_count = len(group["members"])
-                    st.markdown(f"**인원:** {member_count}/{group['max_members']}명 | **멤버:** {', '.join(group['members'])}")
+                    st.markdown(f"**인원:** {len(group['members'])}/{group['max_members']}명 | **멤버:** {', '.join(group['members'])}")
 
                 with col_btn:
                     is_joined = group["id"] in st.session_state.my_groups
@@ -995,8 +974,6 @@ with tabs[3]:
     # --- 스터디 만들기 ---
     with study_tabs[1]:
         st.subheader("✏️ 새 스터디 그룹 만들기")
-
-        # 공개/비공개 선택을 세션에 명시적으로 저장
         if "study_is_public" not in st.session_state:
             st.session_state.study_is_public = True
 
@@ -1033,16 +1010,10 @@ with tabs[3]:
                     invite_code = None if is_public else "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
                     new_id = max([g["id"] for g in st.session_state.study_groups], default=0) + 1
                     new_group = {
-                        "id": new_id,
-                        "name": new_name,
-                        "subject": new_subject,
-                        "members": ["나 (현재 사용자)"],
-                        "max_members": new_max,
-                        "chat": [],
-                        "description": new_desc,
-                        "goal": new_goal,
-                        "public": is_public,
-                        "code": invite_code,
+                        "id": new_id, "name": new_name, "subject": new_subject,
+                        "members": ["나 (현재 사용자)"], "max_members": new_max,
+                        "chat": [], "description": new_desc, "goal": new_goal,
+                        "public": is_public, "code": invite_code,
                     }
                     new_db_id = save_study_group(new_group)
                     if new_db_id:
@@ -1059,7 +1030,6 @@ with tabs[3]:
     # --- 내 스터디 (채팅) ---
     with study_tabs[2]:
         st.subheader("💬 내 스터디 채팅")
-
         my_groups_list = [g for g in st.session_state.study_groups if g["id"] in st.session_state.my_groups]
 
         if not my_groups_list:
@@ -1079,14 +1049,12 @@ with tabs[3]:
                     st.warning("🔒 비공개")
                     st.code(selected_group.get("code", ""), language=None)
             with col_del:
-                # 내가 만든 스터디(첫 번째 멤버)만 삭제 가능
                 is_owner = selected_group["members"] and selected_group["members"][0] == "나 (현재 사용자)"
                 if is_owner:
                     if st.button("🗑️ 삭제", key=f"del_{selected_group['id']}", type="secondary", use_container_width=True):
                         st.session_state[f"confirm_del_{selected_group['id']}"] = True
                         st.rerun()
 
-            # 삭제 확인 팝업
             if st.session_state.get(f"confirm_del_{selected_group['id']}", False):
                 st.error(f"⚠️ **'{selected_group['name']}'** 스터디를 정말 삭제할까요? 모든 채팅이 사라집니다.")
                 col_yes, col_no = st.columns(2)
@@ -1105,22 +1073,16 @@ with tabs[3]:
 
             st.divider()
 
-            # 채팅 메시지 표시
             chat_container = st.container(height=350)
             with chat_container:
                 if not selected_group["chat"]:
                     st.caption("아직 대화가 없습니다. 먼저 인사해보세요! 👋")
                 for msg in selected_group["chat"]:
-                    if msg["sender"] == "나":
-                        with st.chat_message("user"):
-                            st.markdown(f"**{msg['sender']}**: {msg['text']}")
-                            st.caption(msg.get("time", ""))
-                    else:
-                        with st.chat_message("assistant"):
-                            st.markdown(f"**{msg['sender']}**: {msg['text']}")
-                            st.caption(msg.get("time", ""))
+                    role = "user" if msg["sender"] == "나" else "assistant"
+                    with st.chat_message(role):
+                        st.markdown(f"**{msg['sender']}**: {msg['text']}")
+                        st.caption(msg.get("time", ""))
 
-            # 채팅 입력
             chat_input_key = f"chat_input_{selected_group['id']}"
             chat_msg = st.chat_input(f"{selected_group_name}에 메시지 보내기...", key=chat_input_key)
             if chat_msg:
@@ -1128,16 +1090,11 @@ with tabs[3]:
                 new_chat = list(selected_group["chat"])
                 new_chat.append({"sender": "나", "text": chat_msg, "time": now})
 
-                # AI 스터디 도우미 응답 (3번째 메시지마다)
                 if api_key and len(new_chat) % 3 == 0:
                     try:
+                        from openai import OpenAI
                         client = OpenAI(api_key=api_key)
-                        ai_prompt = f"""
-                        당신은 스터디 그룹의 AI 학습 도우미입니다.
-                        스터디 주제: {selected_group['subject']}
-                        마지막 메시지: {chat_msg}
-                        학습에 도움이 되는 짧은 응원/팁을 1-2문장으로 해주세요. 이모지 포함.
-                        """
+                        ai_prompt = f"스터디 주제: {selected_group['subject']}\n마지막 메시지: {chat_msg}\n학습에 도움이 되는 짧은 응원/팁을 1-2문장으로 해주세요. 이모지 포함."
                         ai_resp = client.chat.completions.create(
                             model="gpt-4o-mini",
                             messages=[{"role": "user", "content": ai_prompt}],
@@ -1151,6 +1108,5 @@ with tabs[3]:
                     except:
                         pass
 
-                # Supabase에 채팅 저장
                 update_study_group(selected_group["id"], {"chat": new_chat})
                 st.rerun()
