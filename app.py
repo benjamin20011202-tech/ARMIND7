@@ -31,6 +31,34 @@ else:
         st.info("키는 저장되지 않고 휘발됩니다.")
 
 # ==========================================
+# 🚨 임시 디버깅 툴 (원인 파악 후 삭제하세요)
+# ==========================================
+with st.expander("🛠️ API 연결 강제 테스트 (디버깅용)"):
+    if st.button("국방부 API 찔러보기"):
+        import requests
+        test_key = st.secrets.get("MND_API_KEY", "키_없음")
+        test_service = st.secrets.get("MND_SERVICE", "DS_TB_MNDT_DATEBYMLSVC_6335")
+        test_url = f"https://openapi.mnd.go.kr/{test_key}/xml/{test_service}/1/5/"
+        
+        st.write(f"🔗 **요청 URL:** (보안상 키 일부 가림)")
+        st.info(test_url.replace(test_key, test_key[:4] + "****"))
+        
+        try:
+            # SSL 인증서 무시(verify=False) 옵션 추가 테스트
+            resp = requests.get(test_url, timeout=10, verify=False) 
+            st.write(f"📊 **상태 코드:** HTTP {resp.status_code}")
+            
+            if resp.status_code == 200:
+                st.success("응답 성공! 아래 원본 데이터를 확인하세요.")
+                st.code(resp.text[:1000], language="xml") # 앞부분 1000자만 출력
+            else:
+                st.error("서버가 에러 코드를 반환했습니다.")
+                st.code(resp.text, language="html")
+        except Exception as e:
+            st.error(f"요청 자체를 실패했습니다 (타임아웃 또는 연결 거부): {e}")
+
+
+# ==========================================
 # 3. 세션 상태 초기화
 # ==========================================
 # Supabase 클라이언트 초기화
