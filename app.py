@@ -679,7 +679,7 @@ with tabs[2]:
         import requests, xml.etree.ElementTree as ET
         url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/{start}/{end}/"
         try:
-            resp = requests.get(url, timeout=(60, 60))  # 연결 10초, 데이터 수신 60초
+            resp = requests.get(url, timeout=(120, 120))  # 연결 120초, 데이터 수신 120초
             resp.encoding = "utf-8"
             raw = resp.text
             debug_info = {"url": url, "status": resp.status_code, "raw_preview": raw[:500]}
