@@ -8,10 +8,10 @@ from supabase import create_client, Client
 # ==========================================
 # 1. 페이지 설정 및 디자인
 # ==========================================
-st.set_page_config(page_title="ARMIND7: 디지털 전우", page_icon="🪖", layout="wide")
+st.set_page_config(page_title="SOLMATE: 디지털 전우", page_icon="🪖", layout="wide")
 
-st.title("🪖 ARMIND7: 당신의 디지털 전우")
-st.markdown("### 상승 7사단, 당신의 마음을 지킵니다.")
+st.title("🪖 SOLMATE")
+st.markdown("### 당신의 디지털 전우")
 
 # ==========================================
 # 2. API 키 처리
@@ -204,7 +204,7 @@ def analyze_input(text, key, history):
 # ==========================================
 # 5. 메인 탭 네비게이션
 # ==========================================
-tabs = st.tabs(["💬 AI 상담", "💄 화장품 추천", "🥗 식단 관리", "📚 군백기 지우개"])
+tabs = st.tabs(["💬 고민 상담", "💄 화장품 추천", "🥗 식단 관리", "📚 군백기 지우개"])
 
 # ==========================================
 # TAB 1: AI 상담 (기존 기능)
