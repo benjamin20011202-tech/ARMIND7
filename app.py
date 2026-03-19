@@ -685,36 +685,26 @@ with tabs[2]:
         "비타민C": 100, "칼슘": 800, "철분": 12
     }
 
-    # 영양소 기본값 (메뉴명으로 AI 추정)
-    NUTRIENT_DEFAULTS = {
-        "칼로리": 150, "탄수화물": 20, "단백질": 8, "지방": 5,
-        "비타민C": 5, "칼슘": 30, "철분": 1
-    }
-
     # ── 국방부 공공API 호출 (3회 재시도 적용) ──
     MND_API_KEY = st.secrets.get("MND_API_KEY", "")
     MND_SERVICE = st.secrets.get("MND_SERVICE", "DS_TB_MNDT_DATEBYMLSVC_6335")
 
     @st.cache_data(ttl=3600)
     def fetch_mnd_meal(year_month: str, start: int = 1, end: int = 300):
-        """year_month: 'YYYYMM' 형식. 해당 월의 식단 전체를 가져옵니다. (최대 3회 자동 재시도)"""
+        import requests, xml.etree.ElementTree as ET
+        import time
         url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/{start}/{end}/"
         last_error = None
-        
-        # 💡 API 서버가 불안정할 수 있으므로 최대 3번까지 재시도합니다.
         for attempt in range(3):
             try:
                 resp = requests.get(url, timeout=(10, 60))
                 resp.encoding = "utf-8"
-                raw = resp.text
-                root = ET.fromstring(raw)
+                root = ET.fromstring(resp.text)
 
-                # 실제 태그명 자동 탐지
                 first_row = next(root.iter("row"), None)
                 if first_row is None:
                     return {}, None, []
 
-                # 실제 태그명 고정
                 date_tag = "dates"
                 brst_tag = "brst"
                 lnch_tag = "lunc"
@@ -727,9 +717,9 @@ with tabs[2]:
                 meals = {}
                 for row in root.iter("row"):
                     raw_date = (row.findtext(date_tag) or "").strip()
-                    if not raw_date:
-                        continue
+                    if not raw_date: continue
                     
+                    import re
                     m = re.match(r"(\d{4})-(\d{2})-(\d{2})", raw_date)
                     date = m.group(1) + m.group(2) + m.group(3) if m else raw_date
 
@@ -751,45 +741,61 @@ with tabs[2]:
                     lnch_name = clean_name(row.findtext(lnch_tag))
                     dinr_name = clean_name(row.findtext(dinr_tag))
 
-                    if brst_name and brst_name not in meals[date]["아침"]:
-                        meals[date]["아침"][brst_name] = clean_cal(row.findtext(brst_cal))
-                    if lnch_name and lnch_name not in meals[date]["점심"]:
-                        meals[date]["점심"][lnch_name] = clean_cal(row.findtext(lnch_cal))
-                    if dinr_name and dinr_name not in meals[date]["저녁"]:
-                        meals[date]["저녁"][dinr_name] = clean_cal(row.findtext(dinr_cal))
+                    if brst_name and brst_name not in meals[date]["아침"]: meals[date]["아침"][brst_name] = clean_cal(row.findtext(brst_cal))
+                    if lnch_name and lnch_name not in meals[date]["점심"]: meals[date]["점심"][lnch_name] = clean_cal(row.findtext(lnch_cal))
+                    if dinr_name and dinr_name not in meals[date]["저녁"]: meals[date]["저녁"][dinr_name] = clean_cal(row.findtext(dinr_cal))
 
-                    if row.findtext(sum_cal_tag):
-                        meals[date]["총_칼로리"] = row.findtext(sum_cal_tag).replace("kcal","").strip()
+                    if row.findtext(sum_cal_tag): meals[date]["총_칼로리"] = row.findtext(sum_cal_tag).replace("kcal","").strip()
 
-                # 성공적으로 파싱을 완료하면 반환
                 return meals, None, list(meals.keys())
-            
             except Exception as e:
                 last_error = str(e)
-                # 실패 시 1.5초 대기 후 다음 시도로 넘어감
                 time.sleep(1.5)
-                
-        # 3번 모두 실패했을 경우에만 에러 반환
         return {}, f"API 3회 재시도 실패: {last_error}", []
 
     @st.cache_data(ttl=86400)
     def get_total_count():
+        import requests, xml.etree.ElementTree as ET
+        import time
         url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/1/1/"
-        
-        # 💡 총 개수 불러오기도 3번 재시도
         for attempt in range(3):
             try:
                 resp = requests.get(url, timeout=(10, 30))
                 if resp.status_code == 200:
                     root = ET.fromstring(resp.text)
                     total = root.findtext("list_total_count")
-                    if total:
-                        return int(total)
+                    if total: return int(total)
             except:
                 pass
-            time.sleep(1.0) # 1초 대기 후 재시도
-            
+            time.sleep(1.0)
         return None
+
+    # --- 여기서부터 날짜 선택 UI가 다시 추가되었습니다! ---
+    import datetime
+    today = datetime.date.today()
+    
+    col_date, col_refresh = st.columns([3, 1])
+    with col_date:
+        selected_date = st.date_input("📅 날짜 선택", value=today, key="meal_date")
+    with col_refresh:
+        st.write("")
+        if st.button("🔄 새로고침", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+
+    selected_date_str = selected_date.strftime("%Y%m%d")
+    selected_ym = selected_date.strftime("%Y%m")
+
+    # 요일별 샘플 식단 (API 실패 시 fallback)
+    SAMPLE_MEALS = {
+        0: {"아침": {"쌀밥": 355.0, "미역국": 19.0, "계란후라이": 95.0, "배추김치": 8.0, "깍두기": 10.0}, "점심": {"잡곡밥": 366.0, "부대찌개": 367.0, "제육볶음": 659.0, "도라지무침": 35.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "참치김치찌개": 109.0, "닭고기고추장조림": 311.0, "시금치나물": 30.0, "배추김치": 8.0}, "총_칼로리": "3042"},
+        1: {"아침": {"쌀밥": 355.0, "콩나물국": 19.0, "소시지볶음": 224.0, "무말랭이무침": 41.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "순대국": 367.0, "양념깻잎지무침": 22.0, "치즈말이어묵조림": 144.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "쇠고기무국": 37.0, "떡갈비칠리조림": 347.0, "파김치": 23.0, "배추김치": 8.0}, "총_칼로리": "3115"},
+        2: {"아침": {"쌀밥": 355.0, "된장찌개": 80.0, "두부조림": 100.0, "숙주나물": 17.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "돼지고기무찌개": 63.0, "돈등갈비찜": 863.0, "양배추쌈": 40.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "조갯살미역국": 19.0, "비엔나소시지케찹볶음": 224.0, "파김치": 23.0, "배추김치": 8.0}, "총_칼로리": "3385"},
+        3: {"아침": {"장조림버터비빔밥": 595.0, "콩나물국": 19.0, "무말랭이무침": 41.0, "배추김치": 8.0}, "점심": {"쌀밥": 355.0, "닭볶음탕": 300.0, "김치전": 166.0, "도라지무침": 35.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "순두부찌개": 120.0, "불고기": 250.0, "시금치나물": 30.0, "배추김치": 8.0}, "총_칼로리": "3290"},
+        4: {"아침": {"쌀밥": 355.0, "미역국": 19.0, "계란후라이": 95.0, "배추김치": 8.0, "깍두기": 10.0}, "점심": {"잡곡밥": 366.0, "부대찌개": 367.0, "치즈불닭": 370.0, "파김치": 23.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "참치김치찌개": 109.0, "제육볶음": 659.0, "숙주나물": 17.0, "배추김치": 8.0}, "총_칼로리": "3369"},
+        5: {"아침": {"쌀밥": 355.0, "콩나물국": 19.0, "두부조림": 100.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "소갈비탕": 300.0, "잡채": 200.0, "깍두기": 10.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "된장찌개": 80.0, "닭강정": 350.0, "무생채": 25.0, "배추김치": 8.0}, "총_칼로리": "3184"},
+        6: {"아침": {"쌀밥": 355.0, "미역국": 19.0, "소시지볶음": 224.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "부대찌개": 367.0, "떡갈비": 347.0, "도라지무침": 35.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "콩나물국": 19.0, "제육볶음": 659.0, "파김치": 23.0, "배추김치": 8.0}, "총_칼로리": "3042"},
+    }
 
     with st.spinner("📡 부대 식단을 불러오는 중..."):
         total_count = get_total_count()
@@ -797,7 +803,7 @@ with tabs[2]:
     today_meals = {}
     unit_code = ""
 
-    # 1. API 키 오류이거나 서버가 죽었을 때 (st.stop() 완전 제거)
+    # 1. API 키 오류이거나 서버가 죽었을 때
     if total_count is None:
         st.warning("📡 API 인증 대기 중이거나 서버 지연으로 임시 식단 데이터를 불러옵니다.")
         weekday = selected_date.weekday()
@@ -807,7 +813,7 @@ with tabs[2]:
         with st.spinner("📡 식단 데이터를 불러오는 중..."):
             meal_data, api_error, available_dates = fetch_mnd_meal(selected_ym, start=1, end=total_count)
 
-        # 2. 데이터 파싱 중 에러가 났거나, 오늘 날짜 데이터가 비어있을 때 (st.stop() 완전 제거)
+        # 2. 데이터 파싱 중 에러가 났거나, 오늘 날짜 데이터가 비어있을 때
         if api_error or selected_date_str not in meal_data:
             st.warning("📡 오늘 날짜의 식단 데이터가 없어 임시 식단을 불러옵니다.")
             weekday = selected_date.weekday()
@@ -819,8 +825,6 @@ with tabs[2]:
             unit_code = MND_SERVICE.split("_")[-1]
             st.success(f"✅ {selected_date.strftime('%Y년 %m월 %d일')} 제{unit_code}부대 식단 불러오기 완료!")
 
-    # --- (이 아래부터는 기존 코드와 동일합니다) ---
-    meal_tabs = st.tabs(["🌅 아침", "☀️ 점심", "🌙 저녁", "📊 영양 분석"])
     meal_tabs = st.tabs(["🌅 아침", "☀️ 점심", "🌙 저녁", "📊 영양 분석"])
 
     for meal_time, meal_tab in zip(["아침", "점심", "저녁"], meal_tabs[:3]):
@@ -837,7 +841,7 @@ with tabs[2]:
 
                 st.divider()
                 st.markdown("**✅ 오늘 먹은 메뉴 체크**")
-                checked = {}  # {메뉴명: 칼로리}
+                checked = {}
                 for i, (item, cal) in enumerate(menu_dict.items()):
                     label = f"{item}  ({cal:.1f} kcal)"
                     if st.checkbox(label, value=True, key=f"chk_{meal_time}_{i}_{item[:10]}"):
@@ -850,17 +854,13 @@ with tabs[2]:
     with meal_tabs[3]:
         st.subheader("📊 오늘의 영양 섭취 분석")
 
-        # 체크된 메뉴만 칼로리 합산
         checked_menus = {}
         for meal_time in ["아침", "점심", "저녁"]:
             checked_menus[meal_time] = st.session_state.meal_log.get(meal_time, {})
 
-        total_cal = sum(
-            cal for meal in checked_menus.values() for cal in meal.values()
-        )
+        total_cal = sum(cal for meal in checked_menus.values() for cal in meal.values())
         all_checked = [item for meal in checked_menus.values() for item in meal]
 
-        # 칼로리 달성률 표시
         st.markdown("#### 🔥 섭취 칼로리 (체크한 메뉴 기준)")
         api_total = today_meals.get("총_칼로리") or "?"
         col_name, col_bar = st.columns([1, 3])
@@ -874,7 +874,6 @@ with tabs[2]:
 
         st.divider()
 
-        # AI 영양 분석 (실제 메뉴명 기반)
         if st.button("🤖 AI 상세 영양 분석받기", type="primary", use_container_width=True):
             if not api_key:
                 st.error("API Key를 먼저 입력해주세요.")
@@ -888,6 +887,7 @@ with tabs[2]:
                 }
                 with st.spinner("🔬 실제 식단을 분석 중입니다..."):
                     try:
+                        from openai import OpenAI
                         client = OpenAI(api_key=api_key)
                         prompt = f"""
                         대한민국 육군 장병의 오늘 실제 급식 식단입니다:
@@ -913,7 +913,6 @@ with tabs[2]:
                         st.markdown(response.choices[0].message.content)
                     except Exception as e:
                         st.error(f"오류: {e}")
-
 
 # ==========================================
 # TAB 4: 군백기 지우개 (스터디 커뮤니티)
