@@ -971,9 +971,24 @@ with tabs[3]:
                             st.success(f"'{group['name']}' 스터디에 참여했습니다!")
                             st.rerun()
 
-    # --- 스터디 만들기 ---
+  # --- 스터디 만들기 ---
     with study_tabs[1]:
         st.subheader("✏️ 새 스터디 그룹 만들기")
+
+        # 💡 [핵심 추가] 새로 생성된 스터디 알림 표시 로직 (사용자가 닫을 때까지 유지)
+        if "new_study_created" in st.session_state:
+            info = st.session_state.new_study_created
+            if info["public"]:
+                st.success(f"✅ '{info['name']}' 스터디가 공개 생성되었습니다!")
+            else:
+                st.success(f"✅ '{info['name']}' 스터디가 비공개 생성되었습니다!")
+                st.info(f"🔑 초대 코드: **{info['code']}** ← 복사해서 전우들에게 공유하세요!")
+            
+            if st.button("확인 (알림 닫기)", type="primary"):
+                del st.session_state.new_study_created
+                st.rerun()
+            st.divider()
+
         if "study_is_public" not in st.session_state:
             st.session_state.study_is_public = True
 
@@ -992,7 +1007,8 @@ with tabs[3]:
         else:
             st.info("🔒 비공개 — 생성 시 6자리 초대 코드가 자동 발급됩니다.")
 
-        with st.form("create_study_form"):
+        # 💡 clear_on_submit=True 를 추가하여 생성 후 입력 칸이 깔끔하게 비워지도록 개선
+        with st.form("create_study_form", clear_on_submit=True):
             new_name = st.text_input("스터디 이름 *", placeholder="예: 2025 공무원 합격반")
             new_subject = st.text_input("공부 과목/분야 *", placeholder="예: 행정학, 국어, 영어")
             new_desc = st.text_area("스터디 소개 *", placeholder="스터디 목표와 활동 방식을 소개해주세요.")
@@ -1019,12 +1035,14 @@ with tabs[3]:
                     if new_db_id:
                         st.session_state.my_groups.append(new_db_id)
                         save_my_groups(st.session_state.session_key, st.session_state.my_groups)
-                    st.session_state.study_is_public = True
-                    if is_public:
-                        st.success(f"✅ '{new_name}' 스터디가 공개 생성되었습니다!")
-                    else:
-                        st.success(f"✅ '{new_name}' 스터디가 비공개 생성되었습니다!")
-                        st.info(f"🔑 초대 코드: **{invite_code}** ← 전우들에게 공유하세요!")
+                    
+                    # 💡 [핵심 수정] 즉시 출력하지 않고 세션에 저장한 뒤 rerun() 실행
+                    st.session_state.new_study_created = {
+                        "name": new_name,
+                        "public": is_public,
+                        "code": invite_code
+                    }
+                    st.session_state.study_is_public = True # 생성 후 버튼 상태 초기화
                     st.rerun()
 
     # --- 내 스터디 (채팅) ---
