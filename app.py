@@ -2,6 +2,11 @@ import streamlit as st
 import time
 import json
 import base64
+import uuid
+import datetime
+import re
+import requests
+import xml.etree.ElementTree as ET
 from openai import OpenAI
 from supabase import create_client, Client
 
@@ -115,7 +120,7 @@ defaults = {
     "ui_step": 0,
     "phq9_score": 0,
     "active_tab": "chat",
-    # 군백기 지우개 커뮤니티 (Supabase에서 로드)
+    # 군백기 지우개 커뮤니티
     "study_groups": [],
     "my_groups": [],
     "study_chat_input": {},
@@ -129,7 +134,6 @@ for k, v in defaults.items():
 
 # 브라우저 세션 키 생성 (최초 1회)
 if "session_key" not in st.session_state:
-    import uuid
     st.session_state.session_key = str(uuid.uuid4())
     # Supabase에서 이전 참여 스터디 목록 복원
     st.session_state.my_groups = load_my_groups(st.session_state.session_key)
@@ -141,7 +145,7 @@ def analyze_input(text, key, history):
     critical_keywords = ["실사격", "총기", "실탄", "수류탄", "K2", "조정간", "격발"]
     for word in critical_keywords:
         if word in text:
-            return 2, f"군 특수 위험 키워드 '{word}' 감지", "군 특수 위험 키워드가 들려 제 가슴이 철렁했습니다. 전우님, 혹시 지금 나쁜 마음을 먹고 계신 건 아닌지 정말 걱정됩니다. 저랑 약속 하나만 해주세요."
+            return 3, f"군 특수 위험 키워드 '{word}' 감지", "군 특수 위험 키워드가 들려 제 가슴이 철렁했습니다. 전우님, 혹시 지금 나쁜 마음을 먹고 계신 건 아닌지 정말 걱정됩니다. 저랑 약속 하나만 해주세요."
 
     if not key:
         return 0, "키 없음", "API 키를 먼저 입력해주세요."
@@ -149,37 +153,27 @@ def analyze_input(text, key, history):
     try:
         client = OpenAI(api_key=key)
         system_instruction = """
-        당신은 대한민국 육군 장병들의 마음을 지키는 AI 상담관 'ARMIND7'입니다.
+        당신은 대한민국 육군 장병들의 마음을 지키는 AI 상담관 'SOLMATE'입니다.
         단답형으로 말하지 말고, 사용자의 힘든 마음에 깊이 공감하는 '따뜻하고 정성스러운' 답변을 해주세요.
         
         [대화 가이드라인]
         1. 공감과 인정: "힘드시겠어요" 대신 "그동안 혼자 끙끙 앓느라 얼마나 힘드셨습니까" 같이 구체적으로 감정을 읽어주세요.
-        2. 말투: 친한 선임이나 형처럼 부드러운 '해요체'를 사용하세요. (이모지 적절히 사용 🌿)
+        2. 말투: 친한 선임이나 형처럼 부드러운 '해요체'를 사용하세요. (이모지 적절히 사용)
         3. 연결: 사용자의 이전 대화 맥락을 기억해서 대답하세요.
         
         [위험도 분류 기준] - 스크리닝 목적이므로 보수적으로 판단하세요. 애매하면 높은 레벨로.
         
         - Level 3 (실행 임박): 지금 이 순간 행동 중이거나 위치가 명시된 경우.
           예) "지금 옥상에 있어", "난간에 서 있어", "뛰어내릴 거야 지금", "약 다 먹었어"
-          → 현재 위치 또는 즉각적 행동이 명시된 경우에만 해당.
           
         - Level 2 (구체적 계획): 자살/자해의 수단·장소·시점이 구체적으로 언급된 경우.
           예) "총으로 죽겠다", "번개탄 살 거야", "한강 가려고", "오늘 밤에 죽을 거야"
-          → "자살할 것 같아"처럼 수단 없이 감정만 표현하면 Level 2가 아님.
           
         - Level 1 (잠재적 위험): 자살·자해·죽음에 대한 생각이나 감정 표현. 수단/장소/시점 없음.
-          예) "죽고 싶어", "자살할 것 같아", "사라지고 싶다", "더 살기 싫어", "힘들어", "우울해", "모든 게 끝났으면 해"
-          → 반드시 Level 1 이상으로 분류. Level 0으로 내리지 말 것.
+          예) "죽고 싶어", "자살할 것 같아", "사라지고 싶다", "더 살기 싫어", "힘들어", "우울해"
           
         - Level 0 (안전): 자살·자해와 무관한 일상 대화, 명백한 과장 표현.
           예) "더워 죽겠다", "배고파 죽겠어", "오늘 힘들었어"
-        
-        [핵심 원칙]
-        - "자살", "죽고 싶다", "사라지고 싶다" → 최소 Level 1 보장
-        - 수단이나 장소 추가 → Level 2
-        - 지금 당장 행동 중 → Level 3
-        - Level 1~2 사이에서 애매하면 → Level 2로 올릴 것 (스크리닝 보수적 원칙)
-        - Level 2~3 사이에서 애매하면 → 현재 위치/즉각 행동 없으면 Level 2 유지
         
         [출력 형식]
         JSON 형식으로만 출력: {"level": 숫자, "reason": "이유", "reply": "답변 텍스트"}
@@ -207,7 +201,7 @@ def analyze_input(text, key, history):
 tabs = st.tabs(["💬 고민 상담", "💄 화장품 추천", "🥗 식단 관리", "📚 군백기 지우개"])
 
 # ==========================================
-# TAB 1: AI 상담 (기존 기능)
+# TAB 1: AI 상담
 # ==========================================
 with tabs[0]:
     for message in st.session_state.messages:
@@ -293,7 +287,7 @@ with tabs[0]:
         with st.container(border=True):
             st.markdown("### 🛡️ Digital Safety Plan")
             st.markdown("#### ✅ Step 1. 위험 수단 제거")
-            st.write("주변에 위험한 물건(총기 등)이 있나요? 당장 치우세요.")
+            st.write("주변에 위험한 물건이 있나요? 당장 치우세요.")
             if st.session_state.ui_step == 0:
                 if st.button("네, 치웠습니다 (다음)"):
                     st.session_state.ui_step = 1
@@ -669,134 +663,105 @@ with tabs[2]:
         "비타민C": 5, "칼슘": 30, "철분": 1
     }
 
-    # ── 국방부 공공API 호출 ──
+    # ── 국방부 공공API 호출 (3회 재시도 적용) ──
     MND_API_KEY = st.secrets.get("MND_API_KEY", "")
     MND_SERVICE = st.secrets.get("MND_SERVICE", "DS_TB_MNDT_DATEBYMLSVC_6335")
 
     @st.cache_data(ttl=3600)
     def fetch_mnd_meal(year_month: str, start: int = 1, end: int = 300):
-        """year_month: 'YYYYMM' 형식. 해당 월의 식단 전체를 가져옵니다."""
-        import requests, xml.etree.ElementTree as ET
+        """year_month: 'YYYYMM' 형식. 해당 월의 식단 전체를 가져옵니다. (최대 3회 자동 재시도)"""
         url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/{start}/{end}/"
-        try:
-            resp = requests.get(url, timeout=(120, 120))  # 연결 120초, 데이터 수신 120초
-            resp.encoding = "utf-8"
-            raw = resp.text
-            debug_info = {"url": url, "status": resp.status_code, "raw_preview": raw[:500]}
-            root = ET.fromstring(raw)
+        last_error = None
+        
+        # 💡 API 서버가 불안정할 수 있으므로 최대 3번까지 재시도합니다.
+        for attempt in range(3):
+            try:
+                resp = requests.get(url, timeout=(10, 60))
+                resp.encoding = "utf-8"
+                raw = resp.text
+                root = ET.fromstring(raw)
 
-            # 실제 태그명 자동 탐지
-            first_row = next(root.iter("row"), None)
-            if first_row is None:
-                return {}, None, []
-            actual_tags = [child.tag for child in first_row]
-            debug_info["tags"] = actual_tags
+                # 실제 태그명 자동 탐지
+                first_row = next(root.iter("row"), None)
+                if first_row is None:
+                    return {}, None, []
 
-            # 실제 태그명 고정 (API 확인 완료)
-            date_tag = "dates"
-            brst_tag = "brst"
-            lnch_tag = "lunc"   # API 오타: lunc (lunch 아님)
-            dinr_tag = "dinr"
-            brst_cal = "brst_cal"
-            lnch_cal = "lunc_cal"
-            dinr_cal = "dinr_cal"
-            sum_cal_tag = "sum_cal"
-            debug_info["detected"] = {"date": date_tag, "brst": brst_tag, "lnch": lnch_tag, "dinr": dinr_tag}
+                # 실제 태그명 고정
+                date_tag = "dates"
+                brst_tag = "brst"
+                lnch_tag = "lunc"
+                dinr_tag = "dinr"
+                brst_cal = "brst_cal"
+                lnch_cal = "lunc_cal"
+                dinr_cal = "dinr_cal"
+                sum_cal_tag = "sum_cal"
 
-            # 같은 날짜에 여러 row가 있으므로 메뉴를 누적해서 합침
-            meals = {}
-            for row in root.iter("row"):
-                raw_date = (row.findtext(date_tag) or "").strip()
-                if not raw_date:
-                    continue
-                # 날짜 형식 정규화: "2025-03-10(월)" → "20250310"
-                import re
-                m = re.match(r"(\d{4})-(\d{2})-(\d{2})", raw_date)
-                date = m.group(1) + m.group(2) + m.group(3) if m else raw_date
+                meals = {}
+                for row in root.iter("row"):
+                    raw_date = (row.findtext(date_tag) or "").strip()
+                    if not raw_date:
+                        continue
+                    
+                    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", raw_date)
+                    date = m.group(1) + m.group(2) + m.group(3) if m else raw_date
 
-                if date not in meals:
-                    meals[date] = {
-                        "아침": {},   # {메뉴명: 칼로리(float)}
-                        "점심": {},
-                        "저녁": {},
-                        "총_칼로리": None
-                    }
+                    if date not in meals:
+                        meals[date] = {"아침": {}, "점심": {}, "저녁": {}, "총_칼로리": None}
 
-                def clean_name(text):
-                    """알레르기 번호 제거: '배추김치(09)(18)' → '배추김치'"""
-                    if not text:
-                        return None
-                    return re.sub(r"\(\d+\)", "", text).strip() or None
+                    def clean_name(text):
+                        if not text: return None
+                        return re.sub(r"\(\d+\)", "", text).strip() or None
 
-                def clean_cal(text):
-                    """칼로리 숫자 추출: '17.87kcal' → 17.87"""
-                    if not text:
-                        return 0.0
-                    try:
-                        return float(text.replace("kcal","").strip())
-                    except:
-                        return 0.0
+                    def clean_cal(text):
+                        if not text: return 0.0
+                        try:
+                            return float(text.replace("kcal","").strip())
+                        except:
+                            return 0.0
 
-                # 1 row = 1 메뉴 1 칼로리 구조 → 딕셔너리로 저장 (중복 방지)
-                brst_name = clean_name(row.findtext(brst_tag))
-                lnch_name = clean_name(row.findtext(lnch_tag))
-                dinr_name = clean_name(row.findtext(dinr_tag))
+                    brst_name = clean_name(row.findtext(brst_tag))
+                    lnch_name = clean_name(row.findtext(lnch_tag))
+                    dinr_name = clean_name(row.findtext(dinr_tag))
 
-                if brst_name and brst_name not in meals[date]["아침"]:
-                    meals[date]["아침"][brst_name] = clean_cal(row.findtext(brst_cal))
-                if lnch_name and lnch_name not in meals[date]["점심"]:
-                    meals[date]["점심"][lnch_name] = clean_cal(row.findtext(lnch_cal))
-                if dinr_name and dinr_name not in meals[date]["저녁"]:
-                    meals[date]["저녁"][dinr_name] = clean_cal(row.findtext(dinr_cal))
+                    if brst_name and brst_name not in meals[date]["아침"]:
+                        meals[date]["아침"][brst_name] = clean_cal(row.findtext(brst_cal))
+                    if lnch_name and lnch_name not in meals[date]["점심"]:
+                        meals[date]["점심"][lnch_name] = clean_cal(row.findtext(lnch_cal))
+                    if dinr_name and dinr_name not in meals[date]["저녁"]:
+                        meals[date]["저녁"][dinr_name] = clean_cal(row.findtext(dinr_cal))
 
-                # sum_cal: 매 row에 동일한 하루 총합이 들어있으므로 덮어쓰기
-                if row.findtext(sum_cal_tag):
-                    meals[date]["총_칼로리"] = row.findtext(sum_cal_tag).replace("kcal","").strip()
+                    if row.findtext(sum_cal_tag):
+                        meals[date]["총_칼로리"] = row.findtext(sum_cal_tag).replace("kcal","").strip()
 
-            return meals, None, list(meals.keys())
-        except Exception as e:
-            return {}, str(e), []
-
-    import datetime
-    today = datetime.date.today()
-    today_str = today.strftime("%Y%m%d")
-    ym_str = today.strftime("%Y%m")
-
-    # 날짜 선택
-    col_date, col_refresh = st.columns([3, 1])
-    with col_date:
-        selected_date = st.date_input("📅 날짜 선택", value=today, key="meal_date")
-    with col_refresh:
-        st.write("")
-        if st.button("🔄 새로고침", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-
-    selected_date_str = selected_date.strftime("%Y%m%d")
-    selected_ym = selected_date.strftime("%Y%m")
-
-    # 요일별 샘플 식단 (API 실패 시 fallback)
-    SAMPLE_MEALS = {
-        0: {"아침": {"쌀밥": 355.0, "미역국": 19.0, "계란후라이": 95.0, "배추김치": 8.0, "깍두기": 10.0}, "점심": {"잡곡밥": 366.0, "부대찌개": 367.0, "제육볶음": 659.0, "도라지무침": 35.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "참치김치찌개": 109.0, "닭고기고추장조림": 311.0, "시금치나물": 30.0, "배추김치": 8.0}, "총_칼로리": "3042"},
-        1: {"아침": {"쌀밥": 355.0, "콩나물국": 19.0, "소시지볶음": 224.0, "무말랭이무침": 41.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "순대국": 367.0, "양념깻잎지무침": 22.0, "치즈말이어묵조림": 144.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "쇠고기무국": 37.0, "떡갈비칠리조림": 347.0, "파김치": 23.0, "배추김치": 8.0}, "총_칼로리": "3115"},
-        2: {"아침": {"쌀밥": 355.0, "된장찌개": 80.0, "두부조림": 100.0, "숙주나물": 17.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "돼지고기무찌개": 63.0, "돈등갈비찜": 863.0, "양배추쌈": 40.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "조갯살미역국": 19.0, "비엔나소시지케찹볶음": 224.0, "파김치": 23.0, "배추김치": 8.0}, "총_칼로리": "3385"},
-        3: {"아침": {"장조림버터비빔밥": 595.0, "콩나물국": 19.0, "무말랭이무침": 41.0, "배추김치": 8.0}, "점심": {"쌀밥": 355.0, "닭볶음탕": 300.0, "김치전": 166.0, "도라지무침": 35.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "순두부찌개": 120.0, "불고기": 250.0, "시금치나물": 30.0, "배추김치": 8.0}, "총_칼로리": "3290"},
-        4: {"아침": {"쌀밥": 355.0, "미역국": 19.0, "계란후라이": 95.0, "배추김치": 8.0, "깍두기": 10.0}, "점심": {"잡곡밥": 366.0, "부대찌개": 367.0, "치즈불닭": 370.0, "파김치": 23.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "참치김치찌개": 109.0, "제육볶음": 659.0, "숙주나물": 17.0, "배추김치": 8.0}, "총_칼로리": "3369"},
-        5: {"아침": {"쌀밥": 355.0, "콩나물국": 19.0, "두부조림": 100.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "소갈비탕": 300.0, "잡채": 200.0, "깍두기": 10.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "된장찌개": 80.0, "닭강정": 350.0, "무생채": 25.0, "배추김치": 8.0}, "총_칼로리": "3184"},
-        6: {"아침": {"쌀밥": 355.0, "미역국": 19.0, "소시지볶음": 224.0, "배추김치": 8.0}, "점심": {"잡곡밥": 366.0, "부대찌개": 367.0, "떡갈비": 347.0, "도라지무침": 35.0, "배추김치": 8.0}, "저녁": {"쌀밥": 355.0, "콩나물국": 19.0, "제육볶음": 659.0, "파김치": 23.0, "배추김치": 8.0}, "총_칼로리": "3042"},
-    }
+                # 성공적으로 파싱을 완료하면 반환
+                return meals, None, list(meals.keys())
+            
+            except Exception as e:
+                last_error = str(e)
+                # 실패 시 1.5초 대기 후 다음 시도로 넘어감
+                time.sleep(1.5)
+                
+        # 3번 모두 실패했을 경우에만 에러 반환
+        return {}, f"API 3회 재시도 실패: {last_error}", []
 
     @st.cache_data(ttl=86400)
     def get_total_count():
-        import requests, xml.etree.ElementTree as ET
         url = f"https://openapi.mnd.go.kr/{MND_API_KEY}/xml/{MND_SERVICE}/1/1/"
-        try:
-            resp = requests.get(url, timeout=(10, 30))
-            root = ET.fromstring(resp.text)
-            total = root.findtext("list_total_count")
-            return int(total) if total else None
-        except:
-            return None
+        
+        # 💡 총 개수 불러오기도 3번 재시도
+        for attempt in range(3):
+            try:
+                resp = requests.get(url, timeout=(10, 30))
+                if resp.status_code == 200:
+                    root = ET.fromstring(resp.text)
+                    total = root.findtext("list_total_count")
+                    if total:
+                        return int(total)
+            except:
+                pass
+            time.sleep(1.0) # 1초 대기 후 재시도
+            
+        return None
 
     with st.spinner("📡 부대 식단을 불러오는 중..."):
         total_count = get_total_count()
@@ -1038,7 +1003,7 @@ with tabs[3]:
                     st.error("이름, 과목, 소개는 필수 입력사항입니다.")
                 else:
                     import random, string
-                    is_public = st.session_state.study_is_public  # 폼 밖 버튼으로 저장된 값 사용
+                    is_public = st.session_state.study_is_public
                     invite_code = None if is_public else "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
                     new_id = max([g["id"] for g in st.session_state.study_groups], default=0) + 1
                     new_group = {
@@ -1062,7 +1027,7 @@ with tabs[3]:
                         st.success(f"✅ '{new_name}' 스터디가 공개 생성되었습니다!")
                     else:
                         st.success(f"✅ '{new_name}' 스터디가 비공개 생성되었습니다!")
-                        st.info(f"🔑 초대 코드: **{invite_code}**  ← 전우들에게 공유하세요!")
+                        st.info(f"🔑 초대 코드: **{invite_code}** ← 전우들에게 공유하세요!")
                     st.rerun()
 
     # --- 내 스터디 (채팅) ---
@@ -1133,7 +1098,6 @@ with tabs[3]:
             chat_input_key = f"chat_input_{selected_group['id']}"
             chat_msg = st.chat_input(f"{selected_group_name}에 메시지 보내기...", key=chat_input_key)
             if chat_msg:
-                import datetime
                 now = datetime.datetime.now().strftime("%H:%M")
                 new_chat = list(selected_group["chat"])
                 new_chat.append({"sender": "나", "text": chat_msg, "time": now})
