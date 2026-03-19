@@ -794,34 +794,33 @@ with tabs[2]:
     with st.spinner("📡 부대 식단을 불러오는 중..."):
         total_count = get_total_count()
 
+    today_meals = {}
+    unit_code = ""
+
+    # 1. API 키 오류이거나 서버가 죽었을 때 (st.stop() 완전 제거)
     if total_count is None:
-        st.error("📡 국방부 급식 서버에 연결할 수 없습니다.")
-        st.info("🔄 서버가 일시적으로 느릴 수 있습니다. 잠시 후 페이지를 새로고침 해주세요.")
-        if st.button("🔄 다시 시도", key="retry_total", type="primary"):
-            st.cache_data.clear()
-            st.rerun()
-        st.stop()
+        st.warning("📡 API 인증 대기 중이거나 서버 지연으로 임시 식단 데이터를 불러옵니다.")
+        weekday = selected_date.weekday()
+        today_meals = SAMPLE_MEALS.get(weekday, SAMPLE_MEALS[0])
+        unit_code = "7 (샘플)"
     else:
         with st.spinner("📡 식단 데이터를 불러오는 중..."):
             meal_data, api_error, available_dates = fetch_mnd_meal(selected_ym, start=1, end=total_count)
 
-        if api_error:
-            st.error("📡 식단 데이터를 불러오지 못했습니다.")
-            st.info("🔄 국방부 급식 서버가 일시적으로 응답하지 않고 있습니다. 잠시 후 다시 시도해주세요.")
-            if st.button("🔄 다시 시도", key="retry_meal", type="primary"):
-                st.cache_data.clear()
-                st.rerun()
-            st.stop()
-        elif selected_date_str not in meal_data:
-            st.warning(f"📭 {selected_date.strftime('%Y년 %m월 %d일')} 식단 데이터가 없습니다.")
-            if available_dates:
-                st.info(f"💡 이 달에 데이터가 있는 날짜: {', '.join(available_dates[:5])}")
-            st.stop()
+        # 2. 데이터 파싱 중 에러가 났거나, 오늘 날짜 데이터가 비어있을 때 (st.stop() 완전 제거)
+        if api_error or selected_date_str not in meal_data:
+            st.warning("📡 오늘 날짜의 식단 데이터가 없어 임시 식단을 불러옵니다.")
+            weekday = selected_date.weekday()
+            today_meals = SAMPLE_MEALS.get(weekday, SAMPLE_MEALS[0])
+            unit_code = "7 (샘플)"
+        # 3. 정상적으로 데이터를 가져왔을 때
         else:
             today_meals = meal_data[selected_date_str]
             unit_code = MND_SERVICE.split("_")[-1]
             st.success(f"✅ {selected_date.strftime('%Y년 %m월 %d일')} 제{unit_code}부대 식단 불러오기 완료!")
 
+    # --- (이 아래부터는 기존 코드와 동일합니다) ---
+    meal_tabs = st.tabs(["🌅 아침", "☀️ 점심", "🌙 저녁", "📊 영양 분석"])
     meal_tabs = st.tabs(["🌅 아침", "☀️ 점심", "🌙 저녁", "📊 영양 분석"])
 
     for meal_time, meal_tab in zip(["아침", "점심", "저녁"], meal_tabs[:3]):
