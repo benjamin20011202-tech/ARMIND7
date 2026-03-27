@@ -406,11 +406,19 @@ with tabs[2]:
         return None
 
     today = datetime.date.today()
-    selected_date = st.date_input("📅 날짜 선택", value=today, key="meal_date")
+    
+    # 💡 날짜 선택 칸과 새로고침 버튼을 나란히 배치
+    col_date, col_refresh = st.columns([3, 1])
+    with col_date:
+        selected_date = st.date_input("📅 날짜 선택", value=today, key="meal_date")
+    with col_refresh:
+        st.write("") # 버튼 높이를 맞추기 위한 빈 줄
+        if st.button("🔄 식단 새로고침", use_container_width=True):
+            st.cache_data.clear()  # 기존에 엉킨 API 캐시 데이터를 완전히 삭제
+            st.rerun()             # 화면을 즉시 새로고침하여 API 재호출
+
     selected_date_str = selected_date.strftime("%Y%m%d")
     selected_ym = selected_date.strftime("%Y%m")
-
-    # 💡 SAMPLE_MEALS 딕셔너리를 완전히 삭제했습니다.
 
     total_count = get_total_count()
     today_meals = {} # 기본값을 빈 데이터로 설정
