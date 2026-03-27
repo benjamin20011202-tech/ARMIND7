@@ -355,6 +355,35 @@ with tabs[1]:
 # TAB 3: 식단 관리
 # ==========================================
 with tabs[2]:
+    # ==========================================
+    # 🚨 식단 API 임시 디버깅 툴 (테스트 후 삭제)
+    # ==========================================
+    with st.expander("🛠️ 국방부 식단 API 강제 테스트 (디버깅용)", expanded=True):
+        if st.button("API 찔러보기"):
+            import requests
+            
+            test_key = st.secrets.get("MND_API_KEY", "키_없음")
+            test_service = st.secrets.get("MND_SERVICE", "DS_TB_MNDT_DATEBYMLSVC_6335")
+            
+            st.write(f"🔑 설정된 API 키: `{test_key[:4]}****`")
+            st.write(f"🏷️ 설정된 서비스명: `{test_service}`")
+            
+            test_url = f"https://openapi.mnd.go.kr/{test_key}/xml/{test_service}/1/5/"
+            st.write(f"🔗 요청 URL: `{test_url.replace(test_key, 'SECRET_KEY')}`")
+            
+            try:
+                # SSL 인증서 문제 무시 옵션(verify=False) 포함
+                resp = requests.get(test_url, timeout=10, verify=False)
+                st.write(f"📊 HTTP 상태 코드: **{resp.status_code}**")
+                
+                if resp.status_code == 200:
+                    st.success("✅ 서버 응답 성공! 아래 원본 메시지를 확인하세요.")
+                    st.code(resp.text[:1500], language="xml")
+                else:
+                    st.error("❌ 서버 에러 응답")
+                    st.code(resp.text, language="html")
+            except Exception as e:
+                st.error(f"❌ 네트워크 요청 자체 실패 (방화벽/타임아웃): {e}")
     st.header("🥗 군 식단 영양 분석")
     DAILY_RECOMMEND = {"칼로리": 2700, "탄수화물": 330, "단백질": 65, "지방": 75}
     MND_API_KEY = st.secrets.get("MND_API_KEY", "")
