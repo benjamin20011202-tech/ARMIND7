@@ -204,7 +204,7 @@ def analyze_input(text, key, history):
 # ==========================================
 # 5. 메인 탭 네비게이션
 # ==========================================
-tabs = st.tabs(["💬 AI 상담", "💄 화장품 추천", "🥗 식단 관리", "📚 군백기 지우개"])
+tabs = st.tabs(["💬 AI 상담", "💄 화장품 추천", "🥗 식단 관리", "📚 군백기 지우개", "📊 지휘관 대시보드"])
 
 # ==========================================
 # TAB 1: AI 상담 (기존 기능)
@@ -1161,3 +1161,82 @@ with tabs[3]:
                 # Supabase에 채팅 저장
                 update_study_group(selected_group["id"], {"chat": new_chat})
                 st.rerun()
+
+# ==========================================
+# TAB 5: 지휘관 부대 관리 대시보드 (B2G 시연용)
+# ==========================================
+with tabs[4]:
+    st.header("📊 지휘관 부대 관리 대시보드")
+    st.caption("※ 본 대시보드의 모든 장병 데이터는 철저히 익명화되어 부대 지휘관 및 관리자에게만 제공됩니다.")
+    st.divider()
+
+    # 1. 상단 핵심 요약 지표 (Metrics)
+    col1, col2, col3 = st.columns(3)
+    
+    # 1-1. 안전 지표 (현재 로그인한 유저의 상태 연동 + 가상 데이터)
+    current_risk = st.session_state.risk_level
+    risk_color = "🔴" if current_risk >= 2 else "🟡" if current_risk == 1 else "🟢"
+    with col1:
+        st.metric(label=f"{risk_color} 금일 부대 위기 감지 (Level 2 이상)", value="3 건", delta="현재 접속자 상태 반영" if current_risk>=2 else "-1 건 (전일 대비)", delta_color="inverse")
+    
+    # 1-2. 식단 만족도
+    with col2:
+        st.metric(label="🍽️ 금일 식단 적정 칼로리 달성률", value="78 %", delta="4 % (전일 대비)")
+    
+    # 1-3. 스터디 참여도 (실제 Tab 4에서 만든 스터디 데이터 연동!)
+    active_studies = len(st.session_state.study_groups)
+    total_study_members = sum(len(g.get("members", [])) for g in st.session_state.study_groups)
+    with col3:
+        st.metric(label="📚 활성 스터디 및 참여 인원", value=f"{active_studies} 개", delta=f"총 {total_study_members}명 참여 중")
+
+    st.markdown("---")
+
+    # 2. 상세 통계 차트 영역
+    import pandas as pd
+
+    chart_col1, chart_col2 = st.columns(2)
+
+    with chart_col1:
+        st.subheader("🧠 부대원 심리 건강 분포 (실시간)")
+        st.write("자연어 분석 기반 장병 우울/위기 지표 현황")
+        # 부대 전체를 가정한 시연용 데이터
+        mental_data = pd.DataFrame({
+            "위험도": ["Level 0 (안전)", "Level 1 (잠재위험)", "Level 2 (구체적 계획)", "Level 3 (실행 임박)"],
+            "인원(명)": [412, 35, 2, 1]
+        })
+        # 만약 현재 유저가 Level 2나 3이라면 시연을 위해 수치 증가
+        if current_risk == 2:
+            mental_data.loc[2, "인원(명)"] += 1
+        elif current_risk == 3:
+            mental_data.loc[3, "인원(명)"] += 1
+            
+        mental_data.set_index("위험도", inplace=True)
+        st.bar_chart(mental_data, color="#ff4b4b")
+        if current_risk >= 2:
+            st.error("🚨 **지휘통제실 알림:** 현재 Level 2 이상의 고위험군 징후가 포착되었습니다. 즉각적인 확인이 필요합니다.")
+
+    with chart_col2:
+        st.subheader("📈 스터디(군백기) 참여 트렌드")
+        st.write("최근 1주일간 스터디 출석 및 메시지 활동량")
+        # 시연용 활동량 데이터
+        study_trend = pd.DataFrame({
+            "활동량": [120, 150, 180, 170, 210, 250, 250 + (active_studies * 10)]
+        }, index=["D-6", "D-5", "D-4", "D-3", "D-2", "D-1", "오늘"])
+        st.line_chart(study_trend, color="#0068c9")
+
+    st.divider()
+
+    # 3. 부대 식단 만족도 및 잔반 예측
+    st.subheader("🥗 식단 선호도 및 영양 결핍 모니터링")
+    meal_col1, meal_col2 = st.columns(2)
+    with meal_col1:
+        st.write("**최근 7일 장병 결핍 영양소 Top 3**")
+        st.info("1위: 비타민 C (전체 장병의 42% 부족)\n\n2위: 칼슘 (전체 장병의 38% 부족)\n\n3위: 식이섬유 (전체 장병의 25% 부족)")
+        st.caption("💡 **AI 지휘관 조언:** 금주 부대 PX에 감귤 주스 및 우유 재고를 추가 확보하고, 주말 특식으로 샐러드를 편성할 것을 권장합니다.")
+    
+    with meal_col2:
+        st.write("**오늘의 메뉴별 취식률 (예측)**")
+        meal_data = pd.DataFrame({
+            "취식률(%)": [95, 88, 45, 12]
+        }, index=["제육볶음", "김치찌개", "도라지무침", "해물비빔소스"])
+        st.bar_chart(meal_data, color="#29b09d")
