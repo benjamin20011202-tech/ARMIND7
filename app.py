@@ -410,16 +410,25 @@ with tabs[2]:
     selected_date_str = selected_date.strftime("%Y%m%d")
     selected_ym = selected_date.strftime("%Y%m")
 
+    # 💡 SAMPLE_MEALS 딕셔너리를 완전히 삭제했습니다.
+
     total_count = get_total_count()
+    today_meals = {} # 기본값을 빈 데이터로 설정
+
     if total_count is None:
-        st.warning("📡 서버 지연으로 임시 식단 데이터를 불러옵니다.")
-        today_meals = SAMPLE_MEALS.get(selected_date.weekday(), SAMPLE_MEALS[0])
+        # API 서버 연결 실패 시
+        st.error("📡 국방부 급식 서버 지연으로 데이터를 불러올 수 없습니다.")
     else:
         meal_data, api_error, _ = fetch_mnd_meal(selected_ym, start=1, end=total_count)
-        if api_error or selected_date_str not in meal_data:
-            st.warning("📡 식단 데이터가 없어 임시 식단을 불러옵니다.")
-            today_meals = SAMPLE_MEALS.get(selected_date.weekday(), SAMPLE_MEALS[0])
+        
+        if api_error:
+            # 파싱 에러 또는 타임아웃 발생 시
+            st.error("📡 식단 데이터를 불러오는 중 오류가 발생했습니다.")
+        elif selected_date_str not in meal_data:
+            # 서버는 정상이나, 해당 날짜의 식단이 포털에 안 올라왔을 때
+            st.warning(f"📭 {selected_date.strftime('%Y년 %m월 %d일')} 식단 데이터가 아직 공공데이터포털에 등록되지 않았습니다.")
         else:
+            # 정상적으로 데이터를 가져왔을 때
             today_meals = meal_data[selected_date_str]
             st.success(f"✅ 식단 불러오기 완료!")
 
