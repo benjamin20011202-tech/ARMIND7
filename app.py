@@ -13,10 +13,10 @@ from supabase import create_client, Client
 # ==========================================
 # 1. 페이지 설정 및 디자인
 # ==========================================
-st.set_page_config(page_title="ARMIND7: 디지털 전우", page_icon="🪖", layout="wide")
+st.set_page_config(page_title="SOLMATE", page_icon="🪖", layout="wide")
 
-st.title("🪖 ARMIND7: 당신의 디지털 전우")
-st.markdown("### 상승 7사단, 당신의 마음을 지킵니다.")
+st.title("🪖 SOLMATE")
+st.markdown("### 당신의 마음을 지킵니다.")
 
 # ==========================================
 # 2. API 키 처리
