@@ -16,7 +16,7 @@ from supabase import create_client, Client
 st.set_page_config(page_title="SOLMATE", page_icon="🪖", layout="wide")
 
 st.title("🪖 SOLMATE")
-st.markdown("### 당신의 마음을 지킵니다.")
+st.markdown("### 당신의 디지털 전우.")
 
 # ==========================================
 # 2. API 키 처리
